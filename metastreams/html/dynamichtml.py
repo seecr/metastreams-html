@@ -1,11 +1,27 @@
 import asyncio
 import aionotify
+from _tag import TagFactory
+from pathlib import Path
 
+from weightless.core import compose
+
+class Template:
+    def __init__(self, funcs=None):
+        self.__dict__ = funcs or {}
+
+    def updateFuncs(self, funcs):
+        self.__dict__ = funcs
+
+    def __call__(self, *a, **kw):
+        if 'main' in self.__dict__:
+            return self.__dict__['main'](*a, **kw)
+        raise RuntimeError("Main not found")
 
 class DynamicHtml:
-    def __init__(self, directories):
+    def __init__(self, directories, additional_globals=None):
         self.directories = directories if isinstance(directories, list) else [directories]
         self.templates = {}
+        self._additional_globals = additional_globals or {}
         self._load_templates()
         self._watcher = None
         self._init_inotify()
@@ -20,23 +36,61 @@ class DynamicHtml:
             for path in directory.glob("*.sf"):
                 self._load_template(path)
 
+    def __import__(self, moduleName, globals, *a, **kw):
+        if moduleName in self.templates:
+            #globals[moduleName] = self.templates[moduleName]
+            return self.templates[moduleName]
+        for each in self.directories:
+            if (each / f"{moduleName}.sf").is_file():
+                self._load_template(each / f"{moduleName}.sf")
+                if moduleName not in globals:
+                    globals[moduleName] = self.templates[moduleName]
+                return self.templates[moduleName]
+
+        result = __import__(moduleName, globals, *a, **kw)
+        globals[moduleName] = result
+        return result
+
     def _load_template(self, filepath):
-        module_globals = {}
+        module_globals = dict(__builtins__={})
+        module_globals['__builtins__']['__import__'] = self.__import__
+        module_globals.update(self._additional_globals)
         module_locals = {}
+        module_name = filepath.stem
+        if module_name not in self.templates:
+            self.templates[module_name] = Template()
         with open(filepath, "rb") as f:
             exec(compile(f.read(), filepath, "exec"), module_globals, module_locals)
-        self.templates[filepath.stem] = module_locals['main']
+        self.templates[module_name].updateFuncs(module_locals)
 
     async def _run(self):
         await self._watcher.setup(self.loop)
         while True:
             event = await self._watcher.get_event()
             if event.flags in [aionotify.Flags.MODIFY, aionotify.Flags.MOVED_TO] and event.name.endswith(".sf"):
-                self._load_templates()
+                self._load_template(Path(event.alias)/event.name)
 
     def run(self, loop):
         self.loop = loop
         self.task = loop.create_task(self._run())
+
+    def render_page(self, name, request):
+        template = self.templates[name]
+        tag = TagFactory()
+
+        def _render(name, request):
+            generator = template(tag=tag, request=request)
+            for value in compose(generator):
+                if callable(value):
+                    yield value
+                    continue
+                yield tag.lines()
+                yield tag.escape(value)
+
+            for line in tag.lines():
+                yield line
+        for each in compose(_render(name, request)):
+            yield each
 
 
 from autotest import test
@@ -59,14 +113,15 @@ def load_templates_on_create(tmp_path):
 @test
 async def reload_templates_on_change(tmp_path):
     loop = asyncio.get_running_loop()
-    (tmp_path / "pruebo.sf").write_text("def main(**k): pass")
+    (tmp_path / "pruebo.sf").write_text("def main(**k): return 'version 1'")
     d = DynamicHtml(tmp_path)
     d.run(loop)
     await asyncio.sleep(.01)
-    templates = str(d.templates['pruebo'])
-    (tmp_path / "pruebo.sf").write_text("def main(**k): pass")
+    test.eq('version 1', d.templates['pruebo'].main())
+    (tmp_path / "pruebo.sf").write_text("def main(**k): return 'version 2'")
     await asyncio.sleep(.01)
-    test.ne(templates, str(d.templates['pruebo']))
+    test.eq('version 2', d.templates['pruebo'].main())
+
 
 @test
 async def reload_templates_on_create(tmp_path):
@@ -79,6 +134,7 @@ async def reload_templates_on_create(tmp_path):
     await asyncio.sleep(.01)
     test.eq(1, len(d.templates))
     test.eq(["pruebo"], list(d.templates.keys()))
+
 
 @test
 async def reload_templates_on_move(tmp_path):
@@ -98,14 +154,120 @@ async def reload_templates_on_move(tmp_path):
     await asyncio.sleep(.01)
     test.eq(["pruebo"], list(d.templates.keys()))
 
+
 @test
-async def test_handle_request(tmp_path):
+async def test_render_simple_page(tmp_path):
     loop = asyncio.get_running_loop()
-    (tmp_path / "pruebo.sf").write_text("def main(**k): yield 'hello world'")
+    (tmp_path / "pruebo.sf").write_text("""
+def main(**k):
+    yield 'hello world'
+
+def main2(): pass
+""")
     d = DynamicHtml(tmp_path)
     d.run(loop)
 
-    generator = d.handleRequest(request)
+    g = d.render_page("pruebo", request=None)
+    from weightless.core import compose
+    test.eq(['hello world'], list(compose(g)))
 
 
+@test
+async def test_render_simple_page_2(tmp_path):
+    loop = asyncio.get_running_loop()
+    (tmp_path / "pruebo.sf").write_text("""
+def main(tag, **k):
+    with tag("div"):
+        yield "hello world"
+""")
+    d = DynamicHtml(tmp_path)
+    d.run(loop)
+    await asyncio.sleep(.01)
+
+    g = d.render_page("pruebo", request=None)
+    test.eq(['<div>', 'hello world', '</div>'], list(g))
+
+@test
+async def test_render_simple_page_3(tmp_path):
+    loop = asyncio.get_running_loop()
+    (tmp_path / "pruebo1.sf").write_text("""
+import pruebo2
+
+def main(tag, **k):
+    with tag("div"):
+        yield pruebo2.func(tag, "hello world")
+""")
+    (tmp_path / "pruebo2.sf").write_text("""
+def func(tag, arg):
+    with tag("h1"):
+        yield arg
+""")
+    d = DynamicHtml(tmp_path)
+    d.run(loop)
+    await asyncio.sleep(.01)
+
+    g = d.render_page("pruebo1", request=None)
+    test.eq(['<div><h1>', 'hello world', '</h1></div>'], list(g))
+
+
+@test
+async def test_import_other_modules(tmp_path):
+    loop = asyncio.get_running_loop()
+    (tmp_path / "pruebo.sf").write_text("""
+from sys import version
+import sys
+def main(tag, **k):
+    with tag("p"):
+        yield sys.version
+""")
+    d = DynamicHtml(tmp_path)
+    d.run(loop)
+    await asyncio.sleep(.01)
+    import sys
+    g = d.render_page("pruebo", request=None)
+    test.eq(['<p>', sys.version, '</p>'], list(g))
+
+
+@test
+async def test_change_imported_template(tmp_path):
+    loop = asyncio.get_running_loop()
+    (tmp_path / "pruebo1.sf").write_text("""
+import pruebo2
+
+def main(**kw):
+    yield pruebo2.func()
+""")
+    (tmp_path / "pruebo2.sf").write_text("""
+def func(**kw):
+    yield 1
+""")
+    d = DynamicHtml(tmp_path)
+    d.run(loop)
+    await asyncio.sleep(.1)
+
+    g = d.render_page("pruebo1", request=None)
+    test.eq(['1'], list(g))
+
+    (tmp_path / "pruebo2.sf").write_text("""
+def func(**kw):
+    yield 2
+""")
+    await asyncio.sleep(.1)
+
+    g = d.render_page("pruebo1", request=None)
+    test.eq(['2'], list(g))
+
+@test
+async def test_additional_globals(tmp_path):
+    loop = asyncio.get_running_loop()
+    (tmp_path / "pruebo1.sf").write_text("""
+def main(**kw):
+    yield THE_GLOBAL
+""")
+    d = DynamicHtml(tmp_path, additional_globals={'THE_GLOBAL': 1})
+    d.run(loop)
+    await asyncio.sleep(.1)
+
+    g = d.render_page("pruebo1", request=None)
+    test.eq(['1'], list(g))
 
