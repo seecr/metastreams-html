@@ -1,1 +1,2 @@
-aionotify
+python3-aionotify (>= 0.2.0)
+python3-aionotify (<< 0.3)
