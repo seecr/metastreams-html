@@ -1,12 +1,13 @@
 import asyncio
 import aionotify
 from aiohttp.web import HTTPNotFound
-from _tag import TagFactory
 from pathlib import Path
 from urllib.parse import urlencode
 from json import dumps, loads
 
 from weightless.core import compose
+
+from ._tag import TagFactory
 
 class Template:
     def __init__(self, funcs=None):
