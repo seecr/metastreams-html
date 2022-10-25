@@ -1,7 +1,10 @@
 import asyncio
 import aionotify
+from aiohttp.web import HTTPNotFound
 from _tag import TagFactory
 from pathlib import Path
+from urllib.parse import urlencode
+from json import dumps, loads
 
 from weightless.core import compose
 
@@ -19,7 +22,8 @@ class Template:
 
 class DynamicHtml:
     def __init__(self, directories, additional_globals=None):
-        self.directories = directories if isinstance(directories, list) else [directories]
+        self._original_import = globals()['__builtins__']['__import__']
+        self.directories = [Path(directory) if not isinstance(directory, Path) else directory for directory in (directories if isinstance(directories, list) else [directories])]
         self.templates = {}
         self._additional_globals = additional_globals or {}
         self._load_templates()
@@ -47,12 +51,12 @@ class DynamicHtml:
                     globals[moduleName] = self.templates[moduleName]
                 return self.templates[moduleName]
 
-        result = __import__(moduleName, globals, *a, **kw)
+        result = self._original_import(moduleName, globals, *a, **kw)
         globals[moduleName] = result
         return result
 
     def _load_template(self, filepath):
-        module_globals = dict(__builtins__={})
+        module_globals = {'__builtins__': __builtins__, 'urlencode': urlencode}
         module_globals['__builtins__']['__import__'] = self.__import__
         module_globals.update(self._additional_globals)
         module_locals = {}
@@ -61,7 +65,8 @@ class DynamicHtml:
             self.templates[module_name] = Template()
         with open(filepath, "rb") as f:
             exec(compile(f.read(), filepath, "exec"), module_globals, module_locals)
-        self.templates[module_name].updateFuncs(module_locals)
+        module_globals.update(module_locals)
+        self.templates[module_name].updateFuncs(module_globals)
 
     async def _run(self):
         await self._watcher.setup(self.loop)
@@ -74,12 +79,12 @@ class DynamicHtml:
         self.loop = loop
         self.task = loop.create_task(self._run())
 
-    def render_page(self, name, request):
+    def render_page(self, name, request=None, response=None):
         template = self.templates[name]
         tag = TagFactory()
 
         def _render(name, request):
-            generator = template(tag=tag, request=request)
+            generator = template(tag=tag, request=request, response=response)
             for value in compose(generator):
                 if callable(value):
                     yield value
@@ -92,6 +97,15 @@ class DynamicHtml:
         for each in compose(_render(name, request)):
             yield each
 
+    def handle_request(self, request, response):
+        path = request.path
+        if path[0] == '/':
+            path = path[1:]
+        path_parts = path.split("/", 1)
+        if path_parts[0] in self.templates:
+            return self.render_page(path_parts[0], request, response)
+        raise HTTPNotFound()
+
 
 from autotest import test
 
@@ -99,8 +113,14 @@ from autotest import test
 @test
 def create_ensures_directories_is_list(tmp_path):
     d = DynamicHtml(tmp_path)
-
     test.eq([tmp_path], d.directories)
+
+@test
+def ensure_directories_are_paths(tmp_path):
+    d = DynamicHtml(str(tmp_path))
+    test.eq([tmp_path], d.directories)
+    test.truth(isinstance(d.directories[0], Path))
+
 
 
 @test
@@ -167,7 +187,7 @@ def main2(): pass
     d = DynamicHtml(tmp_path)
     d.run(loop)
 
-    g = d.render_page("pruebo", request=None)
+    g = d.render_page("pruebo", request=None, response=None)
     from weightless.core import compose
     test.eq(['hello world'], list(compose(g)))
 
@@ -184,7 +204,7 @@ def main(tag, **k):
     d.run(loop)
     await asyncio.sleep(.01)
 
-    g = d.render_page("pruebo", request=None)
+    g = d.render_page("pruebo", request=None, response=None)
     test.eq(['<div>', 'hello world', '</div>'], list(g))
 
 @test
@@ -206,8 +226,29 @@ def func(tag, arg):
     d.run(loop)
     await asyncio.sleep(.01)
 
-    g = d.render_page("pruebo1", request=None)
+    g = d.render_page("pruebo1", request=None, response=None)
     test.eq(['<div><h1>', 'hello world', '</h1></div>'], list(g))
+
+
+@test
+async def test_render_page_with_function(tmp_path):
+    loop = asyncio.get_running_loop()
+    (tmp_path / "pruebo.sf").write_text("""
+def main(tag, **k):
+    with tag("div"):
+        yield func(tag, "hello world")
+
+def func(tag, arg):
+    with tag("h1"):
+        yield arg
+""")
+    d = DynamicHtml(tmp_path)
+    d.run(loop)
+    await asyncio.sleep(.01)
+
+    g = d.render_page("pruebo", request=None, response=None)
+    test.eq(['<div><h1>', 'hello world', '</h1></div>'], list(g))
+
 
 
 @test
@@ -216,6 +257,7 @@ async def test_import_other_modules(tmp_path):
     (tmp_path / "pruebo.sf").write_text("""
 from sys import version
 import sys
+
 def main(tag, **k):
     with tag("p"):
         yield sys.version
@@ -224,7 +266,7 @@ def main(tag, **k):
     d.run(loop)
     await asyncio.sleep(.01)
     import sys
-    g = d.render_page("pruebo", request=None)
+    g = d.render_page("pruebo", request=None, response=None)
     test.eq(['<p>', sys.version, '</p>'], list(g))
 
 
@@ -245,7 +287,7 @@ def func(**kw):
     d.run(loop)
     await asyncio.sleep(.1)
 
-    g = d.render_page("pruebo1", request=None)
+    g = d.render_page("pruebo1", request=None, response=None)
     test.eq(['1'], list(g))
 
     (tmp_path / "pruebo2.sf").write_text("""
@@ -254,8 +296,34 @@ def func(**kw):
 """)
     await asyncio.sleep(.1)
 
-    g = d.render_page("pruebo1", request=None)
+    g = d.render_page("pruebo1", request=None, response=None)
     test.eq(['2'], list(g))
+
+
+@test
+async def test_basic_python_stuff(tmp_path):
+    loop = asyncio.get_running_loop()
+    (tmp_path / "pruebo.sf").write_text("""
+def main(**kw):
+    t = True
+    f = False
+    n = None
+    i = int("42")
+    s = str(42)
+    d = dict()
+    l = list()
+    s = sorted([])
+    u = urlencode(dict())
+    yield "Works!"
+""")
+    d = DynamicHtml(tmp_path)
+    d.run(loop)
+    await asyncio.sleep(.1)
+
+    g = d.render_page("pruebo", request=None, response=None)
+    test.eq(['Works!'], list(g))
+
+
 
 @test
 async def test_additional_globals(tmp_path):
@@ -268,6 +336,44 @@ def main(**kw):
     d.run(loop)
     await asyncio.sleep(.1)
 
-    g = d.render_page("pruebo1", request=None)
+    g = d.render_page("pruebo1", request=None, response=None)
     test.eq(['1'], list(g))
+
+
+@test
+async def test_handle_request(tmp_path):
+    loop = asyncio.get_running_loop()
+    (tmp_path / "pruebo.sf").write_text("""
+def main(**kw):
+    yield "It works!"
+""")
+    d = DynamicHtml(tmp_path)
+    d.run(loop)
+    await asyncio.sleep(.1)
+
+    class MockRequest:
+        def __init__(this, path):
+            this.path = path
+
+    test.eq(['It works!'], list(d.handle_request(request=MockRequest(path="/pruebo"), response=None)))
+    test.eq(['It works!'], list(d.handle_request(request=MockRequest(path="/pruebo/again"), response=None)))
+
+
+@test
+async def test_handle_request_not_found(tmp_path):
+    loop = asyncio.get_running_loop()
+    d = DynamicHtml(tmp_path)
+    d.run(loop)
+    await asyncio.sleep(.1)
+
+    class MockRequest:
+        def __init__(this, path):
+            this.path = path
+
+    exception = None
+    try:
+        d.handle_request(request=MockRequest(path="/pruebo"), response=None)
+    except HTTPNotFound as e:
+        exception = e
+    test.truth(isinstance(exception, HTTPNotFound))
 
