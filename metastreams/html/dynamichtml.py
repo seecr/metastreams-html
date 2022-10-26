@@ -29,22 +29,7 @@ from aiohttp.web import HTTPNotFound
 from pathlib import Path
 from urllib.parse import urlencode
 from json import dumps, loads
-
-from weightless.core import compose
-
-from ._tag import TagFactory
-
-class Template:
-    def __init__(self, funcs=None):
-        self.__dict__ = funcs or {}
-
-    def updateFuncs(self, funcs):
-        self.__dict__ = funcs
-
-    def __call__(self, *a, **kw):
-        if 'main' in self.__dict__:
-            return self.__dict__['main'](*a, **kw)
-        raise RuntimeError("Main not found")
+from .template import Template
 
 class DynamicHtml:
     def __init__(self, directories, additional_globals=None):
@@ -107,20 +92,7 @@ class DynamicHtml:
 
     def render_page(self, name, request=None, response=None):
         template = self.templates[name]
-        tag = TagFactory()
-
-        def _render(name, request):
-            generator = template(tag=tag, request=request, response=response)
-            for value in compose(generator):
-                if callable(value):
-                    yield value
-                    continue
-                yield tag.lines()
-                yield tag.escape(value)
-
-            for line in tag.lines():
-                yield line
-        for each in compose(_render(name, request)):
+        for each in template(request=request, response=response):
             yield each
 
     def handle_request(self, request, response):

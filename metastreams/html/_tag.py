@@ -184,3 +184,255 @@ def _splittag(tagname):
     tagname, _, classstring = tagname.partition('.')
     tagname, _, identifier = tagname.partition('#')
     return tagname, identifier, [c for c in classstring.split('.') if c]
+
+
+from autotest import test
+
+
+def as_template(**kw):
+    from .template import Template
+    return ''.join(list(Template(funcs=kw)()))
+
+
+@test
+def test_composition():
+    def main(tag):
+        def my_gen():
+            yield "hello"
+
+        def snd_gen(s):
+            yield s
+
+        @tag_compose
+        def my_tag(tag, start, stop=None):
+            yield snd_gen(start)
+            with tag('div'):
+                with tag('h1'):
+                    yield           # here goes the stuff within 'with'
+            yield stop
+        with tag('head'):
+            with my_tag(tag, 'forword', stop='afterword'):
+                with tag('p'):
+                    yield my_gen()
+    test.eq('<head>forword<div><h1><p>hello</p></h1></div>afterword</head>', as_template(main=main))
+
+
+@test
+def test_compose_escapes_content():
+    def main(tag):
+        def my_gen():
+            yield "4: <>&"
+
+        def snd_gen():
+            yield "2: <>&"
+
+        @tag_compose
+        def my_tag(tag):
+            yield "1: <>&"
+            yield snd_gen()
+            with tag('div'):
+                with tag('h1'):
+                    yield           # here goes the stuff within 'with'
+            yield "5: <>&"
+
+        with tag('body'):
+            with my_tag(tag):
+                yield "3: <>&"
+                with tag('p'):
+                    yield my_gen()
+        test.eq('<body>1: &lt;&gt;&amp;2: &lt;&gt;&amp;<div><h1>3: &lt;&gt;&amp;<p>4: &lt;&gt;&amp;</p></h1></div>5: &lt;&gt;&amp;</body>', as_template(main=main))
+
+
+@test
+def test_attrs():
+    s = StringIO()
+    with Tag(s, 'a', **{'key': 'value'}):
+        s.write('data')
+    test.eq('<a key="value">data</a>', s.getvalue())
+
+
+@test
+def test_append_to_list_attr():
+    s = StringIO()
+    t = Tag(s, 'a', class_=['value'])
+    t.append('class', 'value2')
+    with t:
+        s.write('data')
+    test.eq('<a class="value value2">data</a>', s.getvalue())
+
+
+@test
+def test_append_to_empty_list_attr():
+    s = StringIO()
+    t = Tag(s, 'a', class_=[])
+    t.append('class', 'value')
+    t.append('class', 'value2')
+    t.append('class', 'value3')
+    with t:
+        s.write('data')
+    test.eq('<a class="value value2 value3">data</a>', s.getvalue())
+
+
+@test
+def test_append_to_nothing_creates_list_attr():
+    s = StringIO()
+    t = Tag(s, 'a')
+    t.append('class', 'value')
+    with t:
+        s.write('data')
+    test.eq('<a class="value">data</a>', s.getvalue())
+
+
+@test
+def test_append_to_non_list_attr():
+    s = StringIO()
+    t = Tag(s, 'a', some_attr='not-a-list')
+    try:
+        t.append('some_attr', 'value')
+        assert False
+    except AttributeError:
+        pass
+
+@test
+def test_remove_from_list_attr():
+    s = StringIO()
+    t = Tag(s, 'a', class_=['value', 'value2'])
+    t.remove('class', 'value2')
+    with t:
+        s.write('data')
+    test.eq('<a class="value">data</a>', s.getvalue())
+
+
+@test
+def test_clear_name():
+    test.eq('class', _clearname('class'))
+    test.eq('class', _clearname('class_'))
+    test.eq('_class', _clearname('_class'))
+    test.eq('_class_', _clearname('_class_'))
+    test.eq('class__', _clearname('class__'))
+
+
+@test
+def test_reserved_word_attrs():
+    s = StringIO()
+    with Tag(s, 'a', class_=['class'], if_='if'):
+        s.write('data')
+    test.eq('<a class="class" if="if">data</a>', s.getvalue())
+
+
+@test
+def test_tag_in_template():
+    def main(tag):
+        yield 'voorwoord'
+        with tag('p'):
+            yield 'paragraph'
+        yield 'nawoord'
+    test.eq('voorwoord<p>paragraph</p>nawoord', as_template(main=main))
+
+    def main(tag):
+        yield 'voorwoord'
+        with tag('p'):
+            with tag('i'):
+                yield 'italic'
+    test.eq('voorwoord<p><i>italic</i></p>', as_template(main=main))
+
+    def main(tag):
+        with tag('p'):
+            with tag('i'):
+                yield 'italic'
+    test.eq('<p><i>italic</i></p>', as_template(main=main))
+
+
+@test
+def test_escape_text_within_tags():
+    def main(tag):
+        yield "&"
+    test.eq('&', as_template(main=main))
+
+    def main(tag):
+        yield "&"
+        with tag('p'):
+            yield "&"
+    test.eq('&<p>&amp;</p>', as_template(main=main))
+
+    def main(tag):
+        yield "&a"
+        with tag('p'):
+            yield "&b"
+            yield " &c"
+        yield "&d"
+    test.eq('&a<p>&amp;b &amp;c</p>&d', as_template(main=main))
+
+    def main(tag):
+        with tag('p'):
+            yield "&a"
+            yield " &b"
+    test.eq('<p>&amp;a &amp;b</p>', as_template(main=main))
+
+    def main(tag):
+        with tag('p'):
+            yield "&a"
+            with tag('i'):
+                yield "&b"
+            yield "&c"
+        yield "&d"
+    test.eq('<p>&amp;a<i>&amp;b</i>&amp;c</p>&d', as_template(main=main))
+
+    def main(tag):
+        with tag('p'):
+            yield "&a"
+        yield "&b"
+        with tag('p'):
+            yield "&c"
+        yield "&d"
+    test.eq('<p>&amp;a</p>&b<p>&amp;c</p>&d', as_template(main=main))
+
+
+@test
+def test_escape_other_stuff():
+    def main(tag):
+        with tag('p'):
+            yield ['&', 'noot']
+    test.eq("<p>['&amp;', 'noot']</p>", as_template(main=main))
+
+
+@test
+def test_asis():
+    def main(tag):
+            with tag('p'):
+                yield tag.as_is('<i>dit</i>')
+    test.eq('<p><i>dit</i></p>', as_template(main=main))
+
+
+@test
+def test_mixin_bytes():
+    def main(tag):
+        with tag('p'):
+            yield b"Bytes bite"
+    test.eq('<p>Bytes bite</p>', as_template(main=main))
+
+
+@test
+def test_attributes_converted_to_string():
+    def main(tag):
+        with tag('div', value=3):
+            yield 42
+    test.eq('<div value="3">42</div>', as_template(main=main))
+
+
+@test
+def test_dot_turns_into_classes():
+    def main(tag):
+        with tag('div.w100.ph3'):
+            yield 42
+    test.eq('<div class="w100 ph3">42</div>', as_template(main=main))
+
+    def main(tag):
+        with tag('div.w100.ph3', class_=['other']):
+            yield 42
+    test.eq('<div class="other w100 ph3">42</div>', as_template(main=main))
+
+    def main(tag):
+        with tag('div#identifier.w100.ph3', class_=['other']):
+            yield 42
+    test.eq('<div class="other w100 ph3" id="identifier">42</div>', as_template(main=main))
