@@ -34,9 +34,12 @@ from functools import partial
 from xml.sax.saxutils import quoteattr
 import re
 from contextlib import contextmanager
-from meresco.html.utils import escapeHtml
 from weightless.core import compose
 from warnings import warn
+
+from html import escape
+def escapeHtml(s, quote=False):
+    return escape(s, quote=quote)
 
 def isiter(a):
     try:

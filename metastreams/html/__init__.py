@@ -23,4 +23,4 @@
 #
 ## end license ##
 
-from .dynamichtml import DynamicHtml
+from .dynamichtml import DynamicHtml, Dict
