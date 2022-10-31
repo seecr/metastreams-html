@@ -34,6 +34,7 @@ import sys
 from importlib.util import spec_from_loader
 from importlib.machinery import SourceFileLoader
 import importlib
+import logging
 
 
 class Dict(dict):
@@ -74,13 +75,19 @@ class DynamicHtml:
                 for mod in self._modules:
                     modName = mod.__name__ + "." + event.name[:-3]
                     if modName in sys.modules:
-                        importlib.reload(sys.modules[modName])
+                        try:
+                            importlib.reload(sys.modules[modName])
+                        except Exception as e:
+                            self._log_exception(f"Exception while reloading {modName}:", exc_info=e)
                         continue
-
 
     def run(self, loop):
         self.loop = loop
         self.task = loop.create_task(self._run())
+
+    def _log_exception(self, msg, exc_info):
+        logger = logging.getLogger(__name__)
+        logger.exception(msg, exc_info=exc_info)
 
     def render_page(self, mod, request, response):
         from ._tag import TagFactory
@@ -111,8 +118,11 @@ class DynamicHtml:
             if qname not in sys.modules:
                 try:
                     importlib.import_module(qname)
-                except ModuleNotFoundError as e:
+                except ModuleNotFoundError:
                     raise HTTPNotFound()
+                except Exception as e:
+                    self._log_exception(f"Exception while loading {qname}:", exc_info=e)
+                    raise HTTPInternalServerError()
             mod = sys.modules[qname]
             return self.render_page(mod, request, response)
         raise HTTPNotFound()
@@ -278,6 +288,62 @@ async def test_page_not_found(tmp_path):
         list(d.handle_request(request=MockRequest(path="/pruebo"), response=None))
     except Exception as e:
         test.truth(isinstance(e, HTTPNotFound))
+
+
+@test
+async def test_reload_with_error(tmp_path):
+    sys.path.append(tmp_path.as_posix())
+    (dyn_dir := tmp_path / "pruts6").mkdir()
+    (dyn_dir / "pruebo.sf").write_text("def main(**k): yield 1")
+    logged_exceptions = []
+
+    import pruts6
+    d = DynamicHtml(pruts6)
+    d._log_exception = lambda *a,**kw: logged_exceptions.append((a,kw))
+    d.run(asyncio.get_running_loop())
+    await asyncio.sleep(0.1)
+
+    test.eq(['1'], list(d.handle_request(request=MockRequest(path="/pruebo"), response=None)))
+    test.eq([], logged_exceptions)
+    (dyn_dir / "pruebo.sf").write_text("""
+1/0
+
+def main(**k):
+    yield 11
+""")
+    await asyncio.sleep(0.1)
+
+    test.eq(['1'], list(d.handle_request(request=MockRequest(path="/pruebo"), response=None)))
+    test.eq(1, len(logged_exceptions))
+    test.eq(('Exception while reloading pruts6.pruebo:', ), logged_exceptions[0][0])
+    test.truth(isinstance(logged_exceptions[0][1]['exc_info'], ZeroDivisionError))
+
+@test
+async def test_load_with_error(tmp_path):
+    sys.path.append(tmp_path.as_posix())
+    (dyn_dir := tmp_path / "pruts61").mkdir()
+    (dyn_dir / "pruebo.sf").write_text("""
+1/0
+
+def main(**k):
+    yield 11
+""")
+    logged_exceptions = []
+
+    import pruts61
+    d = DynamicHtml(pruts61)
+    d._log_exception = lambda *a,**kw: logged_exceptions.append((a,kw))
+    
+    test.eq([], logged_exceptions)
+    try:
+        test.eq([], list(d.handle_request(request=MockRequest(path="/pruebo"), response=None)))
+        test.truth(False)
+    except Exception as e:
+        test.truth(isinstance(e, HTTPInternalServerError))
+    test.eq(1, len(logged_exceptions))
+    test.eq(('Exception while loading pruts61.pruebo:', ), logged_exceptions[0][0])
+    test.truth(isinstance(logged_exceptions[0][1]['exc_info'], ZeroDivisionError))
+
 
 
 @test
