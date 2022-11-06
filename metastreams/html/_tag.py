@@ -192,9 +192,15 @@ def _splittag(tagname):
 from autotest import test
 
 
-def as_template(**kw):
-    from .template import Template
-    return ''.join(list(Template(funcs=kw)()))
+def as_template(func):
+    def _render(func):
+        tag = TagFactory()
+        generator = func(tag=tag)
+        for value in compose(generator):
+            yield tag.lines()
+            yield tag.escape(value)
+        yield tag.lines()
+    return ''.join(list(compose(_render(func))))
 
 
 @test
@@ -217,7 +223,7 @@ def test_composition():
             with my_tag(tag, 'forword', stop='afterword'):
                 with tag('p'):
                     yield my_gen()
-    test.eq('<head>forword<div><h1><p>hello</p></h1></div>afterword</head>', as_template(main=main))
+    test.eq('<head>forword<div><h1><p>hello</p></h1></div>afterword</head>', as_template(main))
 
 
 @test
@@ -243,7 +249,7 @@ def test_compose_escapes_content():
                 yield "3: <>&"
                 with tag('p'):
                     yield my_gen()
-        test.eq('<body>1: &lt;&gt;&amp;2: &lt;&gt;&amp;<div><h1>3: &lt;&gt;&amp;<p>4: &lt;&gt;&amp;</p></h1></div>5: &lt;&gt;&amp;</body>', as_template(main=main))
+        test.eq('<body>1: &lt;&gt;&amp;2: &lt;&gt;&amp;<div><h1>3: &lt;&gt;&amp;<p>4: &lt;&gt;&amp;</p></h1></div>5: &lt;&gt;&amp;</body>', as_template(main))
 
 
 @test
@@ -330,33 +336,33 @@ def test_tag_in_template():
         with tag('p'):
             yield 'paragraph'
         yield 'nawoord'
-    test.eq('voorwoord<p>paragraph</p>nawoord', as_template(main=main))
+    test.eq('voorwoord<p>paragraph</p>nawoord', as_template(main))
 
     def main(tag):
         yield 'voorwoord'
         with tag('p'):
             with tag('i'):
                 yield 'italic'
-    test.eq('voorwoord<p><i>italic</i></p>', as_template(main=main))
+    test.eq('voorwoord<p><i>italic</i></p>', as_template(main))
 
     def main(tag):
         with tag('p'):
             with tag('i'):
                 yield 'italic'
-    test.eq('<p><i>italic</i></p>', as_template(main=main))
+    test.eq('<p><i>italic</i></p>', as_template(main))
 
 
 @test
 def test_escape_text_within_tags():
     def main(tag):
         yield "&"
-    test.eq('&', as_template(main=main))
+    test.eq('&', as_template(main))
 
     def main(tag):
         yield "&"
         with tag('p'):
             yield "&"
-    test.eq('&<p>&amp;</p>', as_template(main=main))
+    test.eq('&<p>&amp;</p>', as_template(main))
 
     def main(tag):
         yield "&a"
@@ -364,13 +370,13 @@ def test_escape_text_within_tags():
             yield "&b"
             yield " &c"
         yield "&d"
-    test.eq('&a<p>&amp;b &amp;c</p>&d', as_template(main=main))
+    test.eq('&a<p>&amp;b &amp;c</p>&d', as_template(main))
 
     def main(tag):
         with tag('p'):
             yield "&a"
             yield " &b"
-    test.eq('<p>&amp;a &amp;b</p>', as_template(main=main))
+    test.eq('<p>&amp;a &amp;b</p>', as_template(main))
 
     def main(tag):
         with tag('p'):
@@ -379,7 +385,7 @@ def test_escape_text_within_tags():
                 yield "&b"
             yield "&c"
         yield "&d"
-    test.eq('<p>&amp;a<i>&amp;b</i>&amp;c</p>&d', as_template(main=main))
+    test.eq('<p>&amp;a<i>&amp;b</i>&amp;c</p>&d', as_template(main))
 
     def main(tag):
         with tag('p'):
@@ -388,7 +394,7 @@ def test_escape_text_within_tags():
         with tag('p'):
             yield "&c"
         yield "&d"
-    test.eq('<p>&amp;a</p>&b<p>&amp;c</p>&d', as_template(main=main))
+    test.eq('<p>&amp;a</p>&b<p>&amp;c</p>&d', as_template(main))
 
 
 @test
@@ -396,7 +402,7 @@ def test_escape_other_stuff():
     def main(tag):
         with tag('p'):
             yield ['&', 'noot']
-    test.eq("<p>['&amp;', 'noot']</p>", as_template(main=main))
+    test.eq("<p>['&amp;', 'noot']</p>", as_template(main))
 
 
 @test
@@ -404,7 +410,7 @@ def test_asis():
     def main(tag):
             with tag('p'):
                 yield tag.as_is('<i>dit</i>')
-    test.eq('<p><i>dit</i></p>', as_template(main=main))
+    test.eq('<p><i>dit</i></p>', as_template(main))
 
 
 @test
@@ -412,7 +418,7 @@ def test_mixin_bytes():
     def main(tag):
         with tag('p'):
             yield b"Bytes bite"
-    test.eq('<p>Bytes bite</p>', as_template(main=main))
+    test.eq('<p>Bytes bite</p>', as_template(main))
 
 
 @test
@@ -420,7 +426,7 @@ def test_attributes_converted_to_string():
     def main(tag):
         with tag('div', value=3):
             yield 42
-    test.eq('<div value="3">42</div>', as_template(main=main))
+    test.eq('<div value="3">42</div>', as_template(main))
 
 
 @test
@@ -428,14 +434,14 @@ def test_dot_turns_into_classes():
     def main(tag):
         with tag('div.w100.ph3'):
             yield 42
-    test.eq('<div class="w100 ph3">42</div>', as_template(main=main))
+    test.eq('<div class="w100 ph3">42</div>', as_template(main))
 
     def main(tag):
         with tag('div.w100.ph3', class_=['other']):
             yield 42
-    test.eq('<div class="other w100 ph3">42</div>', as_template(main=main))
+    test.eq('<div class="other w100 ph3">42</div>', as_template(main))
 
     def main(tag):
         with tag('div#identifier.w100.ph3', class_=['other']):
             yield 42
-    test.eq('<div class="other w100 ph3" id="identifier">42</div>', as_template(main=main))
+    test.eq('<div class="other w100 ph3" id="identifier">42</div>', as_template(main))

@@ -4,6 +4,14 @@ from metastreams.html.server import create_server
 from argparse import ArgumentParser
 import asyncio
 
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+async def main(port, modules, static_dir, static_path):
+    await create_server(args.port, args.modules.split(","), args.static_dir, args.static_path)
+    while True:
+        await asyncio.sleep(1)
+
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--modules', help='Data directory', required=True)
@@ -12,7 +20,4 @@ if __name__ == '__main__':
     parser.add_argument('--static_dir', help='directory containing static files')
     args = parser.parse_args()
 
-    loop = asyncio.get_event_loop()
-
-    create_server(loop, args.port, args.modules, args.static_dir, args.static_path)
-    loop.run_forever()
+    asyncio.run(main(args.port, args.modules, args.static_dir, args.static_path))

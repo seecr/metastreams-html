@@ -1,6 +1,8 @@
 from pathlib import Path
 from metastreams.html import DynamicHtml
 import asyncio
+from aiohttp import web as aiohttp_web
+from importlib import import_module
 
 async def static_handler(request):
     staticDir = Path(__file__).parent / "static"
@@ -26,8 +28,39 @@ async def static_handler(request):
     await response.write_eof()
     return response
 
-async def create_server(loop, port, module_names, static_dir, static_path="/static"):
-    imported_modules = [importlib.import_module(name) for name in module_names]
+def dynamic_handler(dHtml):
+    async def _handler(request):
+        response = aiohttp_web.StreamResponse(
+            status=200,
+            reason='OK',
+        )
+
+        try:
+            for each in dHtml.handle_request(request=request, response=response):
+                if not response.prepared:
+                    if not 'Content-Type' in response.headers:
+                        response.headers['Content-Type'] = 'text/html; charset=utf-8'
+                    await response.prepare(request)
+                await response.write(bytes(each, encoding="utf-8"))
+        except aiohttp_web.HTTPError:
+            raise
+        except Exception as e:
+            errorMsg = b"<pre class='alert alert-dark text-decoration-none fs-6 font-monospace'>"
+            errorMsg += bytes(str(e), encoding="utf-8") + b"<br/>"
+            errorMsg += bytes(traceback.format_exc(), encoding="utf-8") + b"</pre>"
+
+            if not response.prepared:
+                await response.prepare(request)
+            await response.write(errorMsg)
+        await response.write_eof()
+        return response
+    return _handler
+
+
+async def create_server(port, module_names, static_dir, static_path="/static"):
+    imported_modules = [import_module(name) for name in module_names]
+
+    loop = asyncio.get_event_loop()
 
     dHtml = DynamicHtml(imported_modules)
     dHtml.run(loop)
@@ -35,7 +68,7 @@ async def create_server(loop, port, module_names, static_dir, static_path="/stat
     app = aiohttp_web.Application()
     app.add_routes([
         aiohttp_web.get('/static/{tail:.+}', static_handler),
-        aiohttp_web.get('/{tail:.*}', dlc_handler(dHtml)),
+        aiohttp_web.get('/{tail:.*}', dynamic_handler(dHtml)),
     ])
 
     runner = aiohttp_web.AppRunner(app)

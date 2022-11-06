@@ -46,9 +46,9 @@ class Dict(dict):
 class TemplateImporter:
     """ finds modules in .sf files """
     def find_spec(self, qname, parent_path, target=None):
-        parent_path = parent_path._path[0]
+        parent_path_list = parent_path if isinstance(parent_path, list) else parent_path._path
         name = qname.rsplit('.')[-1]
-        p = Path(parent_path) / f"{name}.sf"
+        p = Path(parent_path_list[0]) / f"{name}.sf"
         if p.is_file():
             s = spec_from_loader(qname, SourceFileLoader(qname, p.as_posix()))
             return s
@@ -112,19 +112,26 @@ class DynamicHtml:
             path = path[1:]
         path_parts = path.split("/", 1)
         mod_name = path_parts[0]
+
+        mod = None
         for m in self._modules:
             qname = m.__name__ + "." + mod_name
             if qname not in sys.modules:
                 try:
                     importlib.import_module(qname)
+                    mod = sys.modules[qname]
+                    break
                 except ModuleNotFoundError:
-                    raise HTTPNotFound()
+                    continue
                 except Exception as e:
                     self._log_exception(f"Exception while loading {qname}:", exc_info=e)
                     raise HTTPInternalServerError()
-            mod = sys.modules[qname]
-            return self.render_page(mod, request, response)
-        raise HTTPNotFound()
+            else:
+                mod = sys.modules[qname]
+                break
+        if mod is None:
+            raise HTTPNotFound()
+        return self.render_page(mod, request, response)
 
 
 from autotest import test
@@ -190,6 +197,19 @@ def multiple_modules_with_templates(tmp_path):
     from cada import pruebo
     test.eq("cada", pruebo.main())
 
+
+@test
+def multiple_modules_resolve(tmp_path):
+    for name in ['one', 'two']:
+        (dyn_dir := tmp_path / name).mkdir()
+        (dyn_dir / f"{name}.sf").write_text(f"def main(**k): yield '{name}'")
+
+    sys.path.append(tmp_path.as_posix())
+
+    import one, two
+    d = DynamicHtml([one, two])
+
+    test.eq(['two'], list(d.handle_request(request=MockRequest(path="/two"), response=None)))
 
 @test
 async def reload_on_change(tmp_path):
