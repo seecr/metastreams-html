@@ -24,28 +24,15 @@
 #
 ## end license ##
 
-from distutils.core import setup
+from setuptools import setup, find_packages
 
-from os import walk, listdir
-from os.path import join
-data_files = []
-for path, dirs, files in walk('doc'):
-    data_files.append((path.replace('doc', '/usr/share/doc/metastreams-html'), [join(path, f) for f in files if f != 'license.conf']))
-
-packages = []
-for path, dirs, files in walk('metastreams'):
-    if '__init__.py' in files:
-        packagename = path.replace('/', '.')
-        if packagename == 'metastreams':
-            continue
-        packages.append(packagename)
+packages=find_packages(exclude=('metastreams',))
+packages=find_packages() #DO_NOT_DISTRIBUTE
 
 setup(
     name='metastreams-html',
-    packages=[
-        'metastreams',            #DO_NOT_DISTRIBUTE
-    ] + packages,
-    data_files=data_files,
+    packages=packages,
+    scripts=['bin/metastreams-html-server'],
     version='%VERSION%',
     author='Seecr (Seek You Too B.V.)',
     author_email='info@seecr.nl',
