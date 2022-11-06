@@ -1,32 +1,60 @@
+## begin license ##
+#
+# "Metastreams Html" is a template engine based on generators, and a sequel to Slowfoot.
+# It is also known as "DynamicHtml" or "Seecr Html".
+#
+# Copyright (C) 2022 Seecr (Seek You Too B.V.) https://seecr.nl
+#
+# This file is part of "Metastreams Html"
+#
+# "Metastreams Html" is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# "Metastreams Html" is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with "Metastreams Html"; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+## end license ##
+
 from pathlib import Path
 from metastreams.html import DynamicHtml
 import asyncio
 from aiohttp import web as aiohttp_web
 from importlib import import_module
+import magic
+mime = magic.Magic(mime=True)
 
-async def static_handler(request):
-    staticDir = Path(__file__).parent / "static"
-    fname = staticDir / request.path[len('/static/'):]
-    if not fname.is_file():
-        raise aiohttp_web.HTTPNotFound()
+def static_handler(static_dir, static_path):
+    async def _handler(request):
+        fname = Path(static_dir) / request.path[len(static_path+'/'):]
+        if not fname.is_file():
+            raise aiohttp_web.HTTPNotFound()
 
-    fname = str(fname)
-    mimeType = mime.from_file(fname)
-    response = aiohttp_web.StreamResponse(
-        status=200,
-        reason='OK',
-        headers={'Content-Type': mimeType},
-    )
-    await response.prepare(request)
+        fname = str(fname)
+        mimeType = mime.from_file(fname)
+        response = aiohttp_web.StreamResponse(
+            status=200,
+            reason='OK',
+            headers={'Content-Type': mimeType},
+        )
+        await response.prepare(request)
 
-    with open(fname, 'rb') as fp:
-        while True:
-            data = fp.read(1024)
-            if len(data) == 0:
-                break
-            await response.write(data)
-    await response.write_eof()
-    return response
+        with open(fname, 'rb') as fp:
+            while True:
+                data = fp.read(1024)
+                if len(data) == 0:
+                    break
+                await response.write(data)
+        await response.write_eof()
+        return response
+    return _handler
 
 def dynamic_handler(dHtml):
     async def _handler(request):
@@ -67,7 +95,7 @@ async def create_server(port, module_names, static_dir, static_path="/static"):
 
     app = aiohttp_web.Application()
     app.add_routes([
-        aiohttp_web.get('/static/{tail:.+}', static_handler),
+        aiohttp_web.get(static_path + '/{tail:.+}', static_handler(static_dir, static_path)),
         aiohttp_web.get('/{tail:.*}', dynamic_handler(dHtml)),
     ])
 
