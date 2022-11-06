@@ -28,7 +28,6 @@ import aionotify
 from aiohttp.web import HTTPNotFound, HTTPInternalServerError
 from pathlib import Path
 from urllib.parse import urlencode
-from .template import Template
 import sys
 
 from importlib.util import spec_from_loader
