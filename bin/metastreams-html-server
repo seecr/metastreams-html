@@ -33,6 +33,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 async def main(port, modules, index, static_dir, static_path):
     await create_server(port, modules.split(","), index, static_dir, static_path)
+    logging.info(f"Listening on port {port}")
     while True:
         await asyncio.sleep(1)
 
@@ -45,4 +46,4 @@ if __name__ == '__main__':
     parser.add_argument('--static_dir', help='directory containing static files')
     args = parser.parse_args()
 
-    asyncio.run(main(args.port, args.modules, args.static_dir, args.static_path))
+    asyncio.run(main(args.port, args.modules, args.index, args.static_dir, args.static_path))
