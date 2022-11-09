@@ -55,16 +55,18 @@ class TemplateImporter:
 
 
 class DynamicHtml:
-    def __init__(self, modules, context=None):
+    def __init__(self, modules, default="index", context=None):
         if len([importer for importer in sys.meta_path if isinstance(importer, TemplateImporter)]) == 0:
             sys.meta_path.append(TemplateImporter())
 
         self._context = Dict(context) if context else None
         self._watcher = aionotify.Watcher()
         self._modules = [modules] if not isinstance(modules, list) else modules
+        self._modules = [importlib.import_module(mod) if isinstance(mod, str) else mod for mod in self._modules]
         for mod in self._modules:
             path = mod.__path__._path[0]
             self._watcher.watch(path, aionotify.Flags.MODIFY | aionotify.Flags.MOVED_TO)
+        self._default = default
 
     async def _run(self):
         await self._watcher.setup(self.loop)
@@ -107,28 +109,36 @@ class DynamicHtml:
             raise HTTPInternalServerError(body=bytes(str(e), encoding="utf-8"))
 
     def handle_request(self, request, response):
-        path = request.path
-        if path[0] == '/':
-            path = path[1:]
-        path_parts = path.split("/", 1)
-        mod_name = path_parts[0]
-
         mod = None
-        for m in self._modules:
-            qname = m.__name__ + "." + mod_name
-            if qname not in sys.modules:
-                try:
-                    importlib.import_module(qname)
-                    mod = sys.modules[qname]
-                    break
-                except ModuleNotFoundError:
-                    continue
-                except Exception as e:
-                    self._log_exception(f"Exception while loading {qname}:", exc_info=e)
-                    raise HTTPInternalServerError()
+
+        def _load_module(name):
+            try:
+                importlib.import_module(name)
+                return sys.modules[name]
+            except ModuleNotFoundError:
+                pass 
+            except Exception as e:
+                self._log_exception(f"Exception while loading {name}:", exc_info=e)
+                raise HTTPInternalServerError()
+
+        path = request.path
+        if path == "/":
+            if "." in self._default:
+                mod = sys.modules.get(self._default, _load_module(self._default))
             else:
-                mod = sys.modules[qname]
-                break
+                path = "/" + self._default
+
+        if mod is None:
+            if path[0] == '/':
+                path = path[1:]
+            path_parts = path.split("/", 1)
+            mod_name = path_parts[0]
+
+            for m in self._modules:
+                qname = m.__name__ + "." + mod_name
+                if (mod := sys.modules.get(qname, _load_module(qname))):
+                    break
+
         if mod is None:
             raise HTTPNotFound()
         return self.render_page(mod, request, response)
@@ -352,7 +362,7 @@ def main(**k):
     import pruts61
     d = DynamicHtml(pruts61)
     d._log_exception = lambda *a,**kw: logged_exceptions.append((a,kw))
-    
+
     test.eq([], logged_exceptions)
     try:
         test.eq([], list(d.handle_request(request=MockRequest(path="/pruebo"), response=None)))
@@ -397,3 +407,34 @@ async def test_module_imported_with_from(tmp_path):
     (dyn_dir / "pruebo.sf").write_text("def main(**k): yield 11")
     await asyncio.sleep(0.1)
     test.eq(['11'], list(d.handle_request(request=MockRequest(path="/pruebo"), response=None)))
+
+@test
+async def test_module_imported_as_string(tmp_path):
+    sys.path.append(tmp_path.as_posix())
+    (dyn_dir := tmp_path / "here" / "we" / "go" / "again").mkdir(parents=True)
+    (dyn_dir / "pruebo.sf").write_text("def main(**k): yield 1")
+
+    d = DynamicHtml("here.we.go.again")
+    test.eq(['1'], list(d.handle_request(request=MockRequest(path="/pruebo"), response=None)))
+
+
+@test
+async def test_default_page(tmp_path):
+    sys.path.append(tmp_path.as_posix())
+    (dyn_dir := tmp_path / "pruts8").mkdir(parents=True)
+    (dyn_dir / "pruebo.sf").write_text("def main(**k): yield 1")
+
+    d = DynamicHtml("pruts8", default="pruebo")
+    test.eq(['1'], list(d.handle_request(request=MockRequest(path="/"), response=None)))
+
+
+@test
+async def test_specific_default_page(tmp_path):
+    sys.path.append(tmp_path.as_posix())
+    (dyn_dir1 := tmp_path / "pruts91").mkdir(parents=True)
+    (dyn_dir1 / "pruebo.sf").write_text("def main(**k): yield 1")
+    (dyn_dir2 := tmp_path / "pruts92").mkdir(parents=True)
+    (dyn_dir2 / "pruebo.sf").write_text("def main(**k): yield 2")
+
+    d = DynamicHtml(["pruts91", "pruts92"], default="pruts92.pruebo")
+    test.eq(['2'], list(d.handle_request(request=MockRequest(path="/"), response=None)))

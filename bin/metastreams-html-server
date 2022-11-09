@@ -31,8 +31,8 @@ import asyncio
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
-async def main(port, modules, static_dir, static_path):
-    await create_server(args.port, args.modules.split(","), args.static_dir, args.static_path)
+async def main(port, modules, index, static_dir, static_path):
+    await create_server(port, modules.split(","), index, static_dir, static_path)
     while True:
         await asyncio.sleep(1)
 
@@ -40,6 +40,7 @@ if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('--modules', help='Data directory', required=True)
     parser.add_argument('--port', help='Portnumber', type=int, default=8080)
+    parser.add_argument('--index', help='Page shown when / is specified', default="index")
     parser.add_argument('--static_path', help='path static files are served at.', default="/static")
     parser.add_argument('--static_dir', help='directory containing static files')
     args = parser.parse_args()
