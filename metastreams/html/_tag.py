@@ -189,7 +189,8 @@ def _splittag(tagname):
     return tagname, identifier, [c for c in classstring.split('.') if c]
 
 
-from autotest import test
+import autotest
+test = autotest.get_tester(__name__)
 
 
 def as_template(func):

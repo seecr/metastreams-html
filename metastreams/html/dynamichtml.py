@@ -116,7 +116,7 @@ class DynamicHtml:
                 importlib.import_module(name)
                 return sys.modules[name]
             except ModuleNotFoundError:
-                pass 
+                pass
             except Exception as e:
                 self._log_exception(f"Exception while loading {name}:", exc_info=e)
                 raise HTTPInternalServerError()
@@ -144,7 +144,8 @@ class DynamicHtml:
         return self.render_page(mod, request, response)
 
 
-from autotest import test
+import autotest
+test = autotest.get_tester(__name__)
 
 
 class MockRequest:
