@@ -55,7 +55,8 @@ def static_handler(static_dir, static_path):
         return response
     return _handler
 
-from autotest import test
+import autotest
+test = autotest.get_tester(__name__)
 from aiohttp.http import HttpVersion10
 
 class MockRequest:

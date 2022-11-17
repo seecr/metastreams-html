@@ -55,7 +55,8 @@ def dynamic_handler(dHtml):
         return response
     return _handler
 
-from autotest import test
+import autotest
+test = autotest.get_tester(__name__)
 from aiohttp.http import HttpVersion10
 
 class MockRequest:
