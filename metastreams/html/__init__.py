@@ -23,6 +23,8 @@
 #
 ## end license ##
 
+from .sessionstore import SessionStore
+from .cookie import Cookie
 from .dynamichtml import DynamicHtml, Dict
 from .static_handler import static_handler
 from .dynamic_handler import dynamic_handler

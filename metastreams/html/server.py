@@ -32,20 +32,25 @@ from .static_handler import static_handler
 from .dynamic_handler import dynamic_handler
 
 
-async def create_server(port, module_names, index, static_dir, static_path="/static"):
+async def create_server_app(module_names, index, context=None, static_dir=None, static_path="/static", enable_sessions=True):
     imported_modules = [import_module(name) for name in module_names]
 
     loop = asyncio.get_event_loop()
 
-    dHtml = DynamicHtml(imported_modules, default=index)
+    dHtml = DynamicHtml(imported_modules, default=index, context=context)
     dHtml.run(loop)
 
     app = aiohttp_web.Application()
     routes = []
     if static_dir is not None:
         routes.append(aiohttp_web.get(static_path + '/{tail:.+}', static_handler(static_dir, static_path)))
-    routes.append(aiohttp_web.get('/{tail:.*}', dynamic_handler(dHtml)))
+    routes.append(aiohttp_web.get('/{tail:.*}', dynamic_handler(dHtml, enable_sessions=enable_sessions)))
     app.add_routes(routes)
+    return app
+
+
+async def create_server(port, *args, **kwargs):
+    app = create_server_app(*args, **kwargs)
 
     runner = aiohttp_web.AppRunner(app)
     await runner.setup()

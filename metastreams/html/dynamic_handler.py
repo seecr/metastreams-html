@@ -23,33 +23,49 @@
 #
 ## end license ##
 
-from metastreams.html import DynamicHtml
+from metastreams.html import SessionStore, DynamicHtml,Cookie
+
 from aiohttp import web as aiohttp_web
 import traceback
 
-def dynamic_handler(dHtml):
+
+async def prepare(request, response, cookie, session, content_type=None):
+    if response.prepared is True:
+        return
+    if content_type is not None and 'Content-Type' not in response.headers:
+        response.headers['Content-Type'] = content_type
+    if session is not None:
+        cookie.write_to_response(response, session.identifier)
+    await response.prepare(request)
+
+
+def dynamic_handler(dHtml, enable_sessions=True):
+    cookie_name = "METASTREAMS_SESSION"
+    cookie = Cookie(cookie_name) if enable_sessions else None
+    session_store = SessionStore() if enable_sessions else None
+
     async def _handler(request):
         response = aiohttp_web.StreamResponse(
             status=200,
             reason='OK',
         )
 
+        session = None
+        if enable_sessions:
+            session = session_store.get_session(cookie.read_from_request(request))
+
         try:
-            for each in dHtml.handle_request(request=request, response=response):
-                if not response.prepared:
-                    if not 'Content-Type' in response.headers:
-                        response.headers['Content-Type'] = 'text/html; charset=utf-8'
-                    await response.prepare(request)
+            for each in dHtml.handle_request(request=request, response=response, session=session):
+                await prepare(request, response, cookie, session, content_type='text/html; charset=utf-8')
                 await response.write(bytes(each, encoding="utf-8"))
-        except aiohttp_web.HTTPError:
+        except aiohttp_web.HTTPException:
             raise
         except Exception as e:
             errorMsg = b"<pre class='alert alert-dark text-decoration-none fs-6 font-monospace'>"
             errorMsg += bytes(str(e), encoding="utf-8") + b"<br/>"
             errorMsg += bytes(traceback.format_exc(), encoding="utf-8") + b"</pre>"
 
-            if not response.prepared:
-                await response.prepare(request)
+            await prepare(request, response, cookie, session)
             await response.write(errorMsg)
         await response.write_eof()
         return response
@@ -77,8 +93,11 @@ class MockRequest:
         self._payload_writer = Writer()
         self.keep_alive = False
         self.version = HttpVersion10
+        self.cookies = {}
+
     async def _prepare_hook(*a, **kw):
-       pass
+        pass
+
 
 @test
 async def test_page_render(tmp_path):
@@ -88,7 +107,7 @@ async def test_page_render(tmp_path):
         def handle_request(self, *args, **kwargs):
             return self._response
 
-    handler = dynamic_handler(MockDynamicHtml(["This", "Is",  "The", "Result"]))
+    handler = dynamic_handler(MockDynamicHtml(["This", "Is", "The", "Result"]))
     request = MockRequest(path="/")
     response = await handler(request)
     test.eq(b"ThisIsTheResult", request._payload_writer.content)
@@ -103,3 +122,4 @@ async def test_error_message_rendering():
     response = await handler(request)
     test.truth(request._payload_writer.content.startswith(b"<pre class=\'alert alert-dark text-decoration-none fs-6 font-monospace\'>division by zero<br/>Traceback (most recent call last):\n"))
     test.truth(request._payload_writer.content.endswith(b"\nZeroDivisionError: division by zero\n</pre>"))
+
