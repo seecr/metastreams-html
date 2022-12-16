@@ -32,7 +32,7 @@ from .static_handler import static_handler
 from .dynamic_handler import dynamic_handler
 
 
-async def create_server_app(module_names, index, context=None, static_dir=None, static_path="/static", enable_sessions=True):
+def create_server_app(module_names, index, context=None, static_dir=None, static_path="/static", enable_sessions=True):
     imported_modules = [import_module(name) for name in module_names]
 
     loop = asyncio.get_event_loop()
