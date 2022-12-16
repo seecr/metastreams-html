@@ -44,7 +44,7 @@ async def create_server_app(module_names, index, context=None, static_dir=None, 
     routes = []
     if static_dir is not None:
         routes.append(aiohttp_web.get(static_path + '/{tail:.+}', static_handler(static_dir, static_path)))
-    routes.append(aiohttp_web.get('/{tail:.*}', dynamic_handler(dHtml, enable_sessions=enable_sessions)))
+    routes.append(aiohttp_web.route('*', '/{tail:.*}', dynamic_handler(dHtml, enable_sessions=enable_sessions)))
     app.add_routes(routes)
     return app
 

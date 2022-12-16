@@ -25,12 +25,21 @@ class Session:
     def get(self, *args, **kwargs):
         return self._data.get(*args, **kwargs)
 
+    def pop(self, *args, **kwargs):
+        return self._data.pop(*args, **kwargs)
+
     def __setitem__(self, *args, **kwargs):
         self._last_access = timestamp()
         return self._data.__setitem__(*args, **kwargs)
 
     def __getitem__(self, *args, **kwargs):
         return self._data.__getitem__(*args, **kwargs)
+
+    def __iter__(self, *args, **kwargs):
+        return iter(self._data)
+
+    def __len__(self):
+        return len(self._data)
 
 
 class SessionStore:
@@ -95,4 +104,30 @@ def test_session_access_keeps_them_alive():
     test.eq(True, session.is_expired())
     session['data'] = 42
     test.eq(False, session.is_expired())
+
+@test
+def test_iter_session():
+    session_store = SessionStore()
+    session = session_store.new_session()
+    test.eq([], [i for i in session])
+
+    session['key'] = 'value'
+    test.eq(['key'], [i for i in session])
+
+@test
+def test_pop_from_session():
+    session_store = SessionStore()
+    session = session_store.new_session()
+    session['key'] = 'value'
+    test.eq(['key'], [i for i in session])
+    session.pop('key')
+    test.eq([], [i for i in session])
+
+@test
+def test_len_session():
+    session_store = SessionStore()
+    session = session_store.new_session()
+    test.eq(0, len(session))
+    session['key'] = 'value'
+    test.eq(1, len(session))
 
