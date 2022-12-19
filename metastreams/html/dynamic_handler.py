@@ -45,30 +45,39 @@ def dynamic_handler(dHtml, enable_sessions=True):
     session_store = SessionStore() if enable_sessions else None
 
     async def _handler(request):
-        response = aiohttp_web.StreamResponse(
-            status=200,
-            reason='OK',
-        )
-
         session = None
         if enable_sessions:
             session = session_store.get_session(cookie.read_from_request(request))
 
-        try:
-            for each in dHtml.handle_request(request=request, response=response, session=session):
-                await prepare(request, response, cookie, session, content_type='text/html; charset=utf-8')
-                await response.write(bytes(each, encoding="utf-8"))
-        except aiohttp_web.HTTPException:
-            raise
-        except Exception as e:
-            errorMsg = b"<pre class='alert alert-dark text-decoration-none fs-6 font-monospace'>"
-            errorMsg += bytes(str(e), encoding="utf-8") + b"<br/>"
-            errorMsg += bytes(traceback.format_exc(), encoding="utf-8") + b"</pre>"
 
-            await prepare(request, response, cookie, session)
-            await response.write(errorMsg)
+        response = aiohttp_web.StreamResponse(
+            status=200,
+            reason='OK',
+        )
+        if request.method == "POST":
+            return_url = await dHtml.handle_post_request(request=request, session=session)
+            redirect =  aiohttp_web.HTTPFound(return_url)
+            if session is not None:
+                cookie.write_to_response(redirect, session.identifier)
+            raise redirect
+
+        else:
+            try:
+                for each in dHtml.handle_request(request=request, response=response, session=session):
+                    await prepare(request, response, cookie, session, content_type='text/html; charset=utf-8')
+                    await response.write(bytes(each, encoding="utf-8"))
+            except aiohttp_web.HTTPException:
+                raise
+            except Exception as e:
+                errorMsg = b"<pre class='alert alert-dark text-decoration-none fs-6 font-monospace'>"
+                errorMsg += bytes(str(e), encoding="utf-8") + b"<br/>"
+                errorMsg += bytes(traceback.format_exc(), encoding="utf-8") + b"</pre>"
+
+                await prepare(request, response, cookie, session)
+                await response.write(errorMsg)
         await response.write_eof()
         return response
+
     return _handler
 
 import autotest
@@ -90,6 +99,7 @@ class MockRequest:
             async def write_eof(self, a):
                 self.content += a
         self.path = path
+        self.method = "GET"
         self._payload_writer = Writer()
         self.keep_alive = False
         self.version = HttpVersion10
