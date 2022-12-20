@@ -25,8 +25,29 @@
 
 from pathlib import Path
 from aiohttp import web as aiohttp_web
-import magic
-mime = magic.Magic(mime=True)
+
+import mimetypes
+mimetypes.init()
+# Override defaults (for redhat systems)
+mimetypes.add_type("application/javascript", ".js")
+
+# Add types
+mimetypes.add_type("application/xhtml+xml", ".xhtml")
+# XSD removed in Debian Bullsey package media-types (responsible for /etc/mime.types)
+mimetypes.add_type("application/xml", ".xsd")
+
+
+def content_type(filename):
+    if not isinstance(filename, Path):
+        filename = Path(filename)
+
+    type_ = "text/plain"
+    try:
+        type_ = mimetypes.types_map[filename.suffix]
+    except KeyError:
+        pass
+    return type_
+
 
 def static_handler(static_dir, static_path):
     async def _handler(request):
@@ -36,8 +57,8 @@ def static_handler(static_dir, static_path):
         if not (fname := Path(static_dir) / requested_path[len(static_path+'/'):]).is_file():
             raise aiohttp_web.HTTPNotFound()
 
+        mimeType = content_type(fname)
         fname = str(fname)
-        mimeType = mime.from_file(fname)
         response = aiohttp_web.StreamResponse(
             status=200,
             reason='OK',
@@ -108,3 +129,8 @@ async def serve_file(tmp_path):
     test.eq({"Content-Type", "Date", "Server"}, set(dict(response.headers).keys()))
     test.eq(b"These are the contents", request._payload_writer.content)
 
+
+@test
+def test_get_content_type():
+    test.eq("text/css", content_type("pruebo.css"))
+    test.eq("text/plain", content_type("pruebo.we_have_no_idea"))
