@@ -20,6 +20,7 @@ class PathModify:
             if (i := sys.path.index(path)) > -1:
                 sys.path.pop(i)
 
+
 class RevertImports:
     def __init__(self):
         self._modules = sys.modules.copy()
@@ -31,6 +32,13 @@ class RevertImports:
         for each in list(sys.modules.keys()):
             if each not in self._modules:
                 sys.modules.pop(each)
+
+
+class Dict(dict):
+    def __getattribute__(self, key):
+        if key in self:
+            return self[key]
+        return dict.__getattribute__(self, key)
 
 
 import autotest

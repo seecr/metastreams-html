@@ -35,14 +35,7 @@ from importlib.machinery import SourceFileLoader
 import importlib
 import logging
 
-from .utils import PathModify, RevertImports
-
-class Dict(dict):
-    def __getattribute__(self, key):
-        if key in self:
-            return self[key]
-        return dict.__getattribute__(self, key)
-
+from .utils import PathModify, RevertImports, Dict
 
 class TemplateImporter:
     """ finds modules in .sf files """
@@ -109,21 +102,17 @@ class DynamicHtml:
         except HTTPException:
             raise
         except Exception as e:
-            logging.exception('DynamicHtml -> render_page Exception')
+            self._log_exception('DynamicHtml -> render_page Exception:', exc_info=e)
             raise HTTPInternalServerError(body=bytes(str(e), encoding="utf-8"))
 
     async def handle_post_request(self, request, session=None):
         if (mod := self._mod_from_request(request)) is None:
             raise HTTPNotFound()
 
-        path = request.path
-        if path[0] == '/':
-            path = path[1:]
-        path_parts = path.split("/")
-        if len(path_parts) <= 1:
+        _, method_name = split_path(request.path)
+        if method_name is None:
             raise HTTPNotFound()
 
-        method_name = path_parts[1]
         try:
             method = getattr(mod, method_name)
         except AttributeError:
@@ -160,16 +149,22 @@ class DynamicHtml:
                 path = "/" + self._default
 
         if mod is None:
-            if path[0] == '/':
-                path = path[1:]
-            path_parts = path.split("/", 1)
-            mod_name = path_parts[0]
-
+            mod_name, _ = split_path(path)
             for m in self._modules:
                 qname = m.__name__ + "." + mod_name
                 if (mod := sys.modules.get(qname, _load_module(qname))):
                     break
         return mod
+
+def split_path(path):
+    if path[0] == '/':
+        path = path[1:]
+    path_parts = [part if part else None for part in path.split("/")] + [None]
+
+    module_name, method_name, *_ = path_parts
+
+    return module_name, method_name
+
 
 import autotest
 test = autotest.get_tester(__name__)
@@ -554,3 +549,9 @@ async def something(request, context, **kwargs):
             return_url = await d.handle_post_request(request=MockRequest(path="/pruebo/something"))
             test.eq("/pruebo", return_url)
             test.eq(["one", "two"], words)
+
+@test
+def test_split_path():
+    test.eq((None, None), split_path("/"))
+    test.eq(("index", None), split_path("/index"))
+    test.eq(("index", "show"), split_path("/index/show"))
