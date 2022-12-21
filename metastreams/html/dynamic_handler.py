@@ -23,10 +23,11 @@
 #
 ## end license ##
 
-from metastreams.html import SessionStore, DynamicHtml,Cookie
+from metastreams.html import SessionStore, DynamicHtml, Cookie
 
 from aiohttp import web as aiohttp_web
 import traceback
+import json
 
 
 async def prepare(request, response, cookie, session, content_type=None):
@@ -49,18 +50,20 @@ def dynamic_handler(dHtml, enable_sessions=True):
         if enable_sessions:
             session = session_store.get_session(cookie.read_from_request(request))
 
-
         response = aiohttp_web.StreamResponse(
             status=200,
             reason='OK',
         )
         if request.method == "POST":
-            return_url = await dHtml.handle_post_request(request=request, session=session)
-            redirect =  aiohttp_web.HTTPFound(return_url)
-            if session is not None:
-                cookie.write_to_response(redirect, session.identifier)
-            raise redirect
-
+            result = await dHtml.handle_post_request(request=request, session=session)
+            if isinstance(result, str):
+                redirect = aiohttp_web.HTTPFound(result)
+                if session is not None:
+                    cookie.write_to_response(redirect, session.identifier)
+                raise redirect
+            elif isinstance(result, dict):
+                await prepare(request, response, cookie, session, content_type='application/json; charset=utf-8')
+                await response.write(bytes(json.dumps(result), encoding="utf-8"))
         else:
             try:
                 for each in dHtml.handle_request(request=request, response=response, session=session):
@@ -85,7 +88,7 @@ test = autotest.get_tester(__name__)
 from aiohttp.http import HttpVersion10
 
 class MockRequest:
-    def __init__(self, path):
+    def __init__(self, path, method="GET"):
         class Writer:
             def __init__(self):
                 self.length = ""
@@ -99,7 +102,7 @@ class MockRequest:
             async def write_eof(self, a):
                 self.content += a
         self.path = path
-        self.method = "GET"
+        self.method = method
         self._payload_writer = Writer()
         self.keep_alive = False
         self.version = HttpVersion10
@@ -132,4 +135,41 @@ async def test_error_message_rendering():
     response = await handler(request)
     test.truth(request._payload_writer.content.startswith(b"<pre class=\'alert alert-dark text-decoration-none fs-6 font-monospace\'>division by zero<br/>Traceback (most recent call last):\n"))
     test.truth(request._payload_writer.content.endswith(b"\nZeroDivisionError: division by zero\n</pre>"))
+
+
+@test
+async def test_post_request():
+    class MockPackage:
+        async def page(self, *args, **kwargs):
+            return "the url"
+
+    class MockDynamicHtml(DynamicHtml):
+        def _mod_from_request(self, *args, **kwargs):
+            return MockPackage()
+
+    handler = dynamic_handler(MockDynamicHtml(modules=[]))
+    request = MockRequest(path="/index/page", method="POST")
+    try:
+        await handler(request)
+    except aiohttp_web.HTTPFound as e:
+        test.eq("the url", e.location)
+
+
+@test
+async def test_post_request_dict_():
+    class MockPackage:
+        async def page(self, *args, **kwargs):
+            return dict(success=True)
+
+    class MockDynamicHtml(DynamicHtml):
+        def _mod_from_request(self, *args, **kwargs):
+            return MockPackage()
+
+    handler = dynamic_handler(MockDynamicHtml(modules=[]))
+    request = MockRequest(path="/index/page", method="POST")
+
+    response = await handler(request)
+
+    test.eq("application/json; charset=utf-8", response.headers['Content-Type'])
+    test.eq(b'{"success": true}', request._payload_writer.content)
 
