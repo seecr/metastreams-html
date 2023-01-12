@@ -113,6 +113,7 @@ class DynamicHtml:
         if method_name is None:
             raise HTTPNotFound()
 
+        # TODO: check if allowed to use method, else 405
         try:
             method = getattr(mod, method_name)
         except AttributeError:

@@ -40,10 +40,11 @@ async def prepare(request, response, cookie, session, content_type=None):
     await response.prepare(request)
 
 
-def dynamic_handler(dHtml, enable_sessions=True):
-    cookie_name = "METASTREAMS_SESSION"
-    cookie = Cookie(cookie_name) if enable_sessions else None
-    session_store = SessionStore() if enable_sessions else None
+def dynamic_handler(dHtml, enable_sessions=True, session_cookie_name="METASTREAMS_SESSION"):
+    cookie, session_store = None, None
+    if enable_sessions is True:
+        cookie = Cookie(session_cookie_name)
+        session_store = SessionStore()
 
     async def _handler(request):
         session = None

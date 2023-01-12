@@ -28,3 +28,10 @@ from .cookie import Cookie
 from .dynamichtml import DynamicHtml, Dict
 from .static_handler import static_handler
 from .dynamic_handler import dynamic_handler
+
+usr_share_path = "/usr/share/metastreams-html"
+
+from pathlib import Path                                                   #DO_NOT_DISTRIBUTE
+my_dir = Path(__file__).absolute()                                         #DO_NOT_DISTRIBUTE
+usr_share_path = (my_dir.parent.parent.parent / 'usr-share').as_posix()    #DO_NOT_DISTRIBUTE
+

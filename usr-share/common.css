@@ -1,0 +1,27 @@
+.normal {
+    font-family: 'Open Sans', sans-serif !important;
+}
+
+*, .light {
+    font-family: 'Open Sans Light', sans-serif !important;
+}
+
+html.wait, html.wait * { cursor: wait !important; }
+
+.changes-pending {
+    border: 2px dashed orange;
+}
+
+.changes-exclamation-pending {
+    color: orange;
+}
+
+.changes-exclamation-inactive {
+    color: lightgrey;
+}
+
+
+*:focus {
+    outline: none;
+}
+

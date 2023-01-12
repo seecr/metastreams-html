@@ -1,0 +1,5 @@
+from aiohttp.web import HTTPFound
+
+def main(session, **kwargs):
+    session.pop("user", None)
+    raise HTTPFound("/")

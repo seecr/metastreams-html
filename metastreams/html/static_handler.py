@@ -49,13 +49,18 @@ def content_type(filename):
     return type_
 
 
-def static_handler(static_dir, static_path):
+def static_handler(static_dirs, static_path):
+    static_dirs = static_dirs if isinstance(static_dirs, list) else [static_dirs]
+
     async def _handler(request):
         if not (requested_path := request.path).startswith(static_path):
             raise aiohttp_web.HTTPNotFound()
 
-        if not (fname := Path(static_dir) / requested_path[len(static_path+'/'):]).is_file():
+        requested_file = requested_path[len(static_path + '/'):]
+        matches = [fname for static_dir in static_dirs if (fname := Path(static_dir) / requested_file).is_file()]
+        if len(matches) == 0:
             raise aiohttp_web.HTTPNotFound()
+        fname = matches[0]
 
         mimeType = content_type(fname)
         fname = str(fname)
@@ -134,3 +139,22 @@ async def serve_file(tmp_path):
 def test_get_content_type():
     test.eq("text/css", content_type("pruebo.css"))
     test.eq("text/plain", content_type("pruebo.we_have_no_idea"))
+
+
+@test
+async def test_multiple_static_directories(tmp_path):
+    (dir_a := tmp_path / "a").mkdir()
+    (dir_b := tmp_path / "b").mkdir()
+    (dir_b / "file.txt").write_text("Hello World")
+    
+    handler = static_handler([dir_a, dir_b], "/static")
+    request = MockRequest(path="/static/file.txt")
+    response = await handler(request)
+
+    test.eq(b"Hello World", request._payload_writer.content)
+
+    (dir_a / "file.txt").write_text("Goodbye World")
+    request = MockRequest(path="/static/file.txt")
+    response = await handler(request)
+
+    test.eq(b"Goodbye World", request._payload_writer.content)

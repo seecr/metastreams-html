@@ -1,0 +1,48 @@
+from metastreams.html.templates import page
+from urllib.parse import parse_qs
+
+async def validate(request, session, context, **kwargs):
+    if 'user' in session:
+        session.pop('user')
+    body = await request.text()
+    params = parse_qs(body)
+    username = params.get('username', [None])[0]
+    password = params.get('password', [None])[0]
+    if context.password_file.validateUser(username, password):
+        session['user'] = username
+        return "/"
+
+    session['login-error-message'] = 'Incorrect username/password'
+    return "/login"
+
+
+def main(*args, **kwargs):
+    yield page.render(content,
+        title="Metastreams",
+        top_bar=False,
+        **kwargs)
+
+
+def content(tag, session, title, *args, **kwargs):
+    with tag("div.d-flex.flex-row.justify-content-center.h-100"):
+        with tag("div.d-flex.flex-column.justify-content-center.align-self-stretch"):
+            with tag("div.d-flex.flex-column.gap-2.p-3.ps-5.pe-5.border.border-2.rounded"):
+                with tag("h1.normal"):
+                    yield title
+
+                if (message := session.pop('login-error-message', None)) is not None:
+                    with tag("div.alert.alert-danger.alert-dismissible.fade.show", role="alert"):
+                        yield message
+                        with tag("button.btn-close", type_="button", **{'data-bs-dismiss': 'alert', 'aria-label': 'Close'}): pass
+
+                with tag("form.form.d-flex.flex-column.gap-4", method="post", action="/login/validate"):
+                    with tag("div.input-group"):
+                        with tag("span.input-group-text"):
+                            with tag("i.bi.bi-person", title="Username"): pass
+                        with tag("input.form-control", type_="text", name="username", placeholder="Username"): pass
+                    with tag("div.input-group"):
+                        with tag("span.input-group-text"):
+                            with tag("i.bi.bi-key", title="Password"): pass
+                        with tag("input.form-control", type_="password", name="password", placeholder="Password"): pass
+                    with tag("button.btn.btn-primary"): yield "Login"
+

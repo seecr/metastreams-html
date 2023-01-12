@@ -1,0 +1,167 @@
+## begin license ##
+#
+# All rights reserved.
+#
+# Copyright (C) 2022 Seecr (Seek You Too B.V.) https://seecr.nl
+#
+## end license ##
+
+
+from urllib.parse import urlencode
+
+
+def render(content, homeUrl="/", top_bar=True, stylesheets=None, javascripts=None, **kwargs):
+    javascripts = ['common.js'] + (javascripts or [])
+    stylesheets = ['common.css'] + (stylesheets or [])
+
+    tag = kwargs['tag']
+    session = kwargs['session']
+    title = kwargs.get("title", "Metastreams")
+    user = session.get("user", None)
+    yield tag.as_is("<!DOCTYPE html>")
+    with tag("html.h-100"):
+        with tag("head"):
+            with tag("title"):
+                yield title
+
+            with tag("link", href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css", rel="stylesheet"): pass
+            with tag("link", href="https://fonts.cdnfonts.com/css/open-sans", rel="stylesheet"): pass
+            with tag("link",
+                href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.0-beta1/dist/css/bootstrap.min.css",
+                rel="stylesheet",
+                integrity="sha384-0evHe/X+R7YkIZDRvuzKMRqM+OrBnVFBL6DOitfPri4tjfHxaWutUpFmBp4vmVor",
+                crossorigin="anonymous"): pass
+            with tag("link",
+                href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.9.1/font/bootstrap-icons.css",
+                rel="stylesheet"): pass
+            for stylesheet in stylesheets:
+                with tag("link", rel="stylesheet", type_="text/css", href=stylesheet if (stylesheet[0] == '/' or stylesheet.startswith("http")) else f'/static/{stylesheet}'): pass
+
+
+        with tag("body.h-100"):
+            if top_bar is True:
+                with tag("nav.navbar.navbar-expand-lg.navbar-light.bg-light.ps-2"):
+                    with tag("div.container-fluid"):
+                        with tag("a.navbar-brand.normal", href=homeUrl):
+                            yield title
+                        with tag("button.navbar-toggler", type_="button", 
+                                **{ 'data-bs-toggle': 'collapse',
+                                    'data-bs-target': '#navbar-content',
+                                    'aria-controls': 'navbar-content',
+                                    'aria-expanded': 'false',
+                                    'aria-label': 'Toggle navigation'}):
+                            with tag('span.navbar-toggler-icon'): pass
+                        with tag("div.collapse.navbar-collapse", id_="navbar-content"):
+                            with tag("ul.navbar-nav.ms-auto"):
+                                if user is not None:
+                                    with tag("li.nav-item.dropdown"):
+                                        with tag("a.nav-link.dropdown-toggle", id_="user-menu-dropdown", role="button", 
+                                                **{ 'data-bs-toggle': 'dropdown',
+                                                    'aria-expanded': 'false'}):
+                                            yield user
+                                        with tag("ul.dropdown-menu.dropdown-menu-end", **{'aria-labelledby': 'user-menu-dropdown'}):
+                                            with tag("li"):
+                                                with tag("a.dropdown-item", href='/account'): yield "Account"
+                                            with tag("li"):
+                                                with tag("hr.dropdown-divider"): pass
+                                            with tag("li"):
+                                                with tag("a.dropdown-item", href='/logout'): yield "Logout"
+            yield content(**kwargs)
+        with tag("script",
+            src="https://code.jquery.com/jquery-3.6.0.min.js",
+            integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4=",
+            crossorigin="anonymous"): pass
+        with tag("script",
+            src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.0-beta1/dist/js/bootstrap.bundle.min.js",
+            integrity="sha384-pprn3073KE6tl6bjs2QrFaJGz5/SUsLqktiwsUTF55Jfv3qYSDhgCecCxMW52nD2",
+            crossorigin="anonymous"): pass
+        with tag("script", src="https://code.jquery.com/ui/1.13.2/jquery-ui.js"): pass
+        with tag("script", src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.6.0/highlight.min.js"): pass
+
+        for each in javascripts:
+            with tag("script", src=each if (each[0] == '/' or each.startswith('http')) else f'/static/{each}'): pass
+
+
+def card(tag, content, title=None, **kwargs):
+    with tag("div.card"):
+        if title is not None:
+            with tag("div.card-header.fw-bold"):
+                if callable(title):
+                    yield title(tag=tag, **kwargs)
+                else:
+                    yield title
+        with tag("div.card-body"):
+            yield content(tag=tag, **kwargs)
+
+def _modal(tag, request, **kwargs):
+    id_ = request.query.get('id', "")
+    title = request.query.get('title', "")
+    size = request.query.get('size', "")
+    save_button = request.query.get('save-button', "")
+
+    with tag("div.modal", id_=id_, tabindex=-1, **{'aria-hidden': 'true'}):
+        with tag("div.modal-dialog", class_=[f'modal-{size}'] if size in ["sm", "lg", "xl"] else []):
+            with tag("div.modal-content"):
+                with tag("div.modal-header"):
+                    with tag("h5.modal-title", title=title):
+                        yield chopped(title, max_length=55)
+                    with tag("button.btn-close", **{"data-bs-dismiss": "modal", "aria-label": "Close"}): pass
+                with tag("div.modal-body"):
+                    pass
+                with tag("div.modal-footer"):
+                    with tag("button.btn.btn-secondary", type_="button", **{"data-bs-dismiss": "modal"}): yield "Close"
+                    if save_button != "":
+                        with tag("button.btn.btn-primary", id_=save_button): yield "Save"
+
+
+def findSubPath(mapping, **kwargs):
+    req = kwargs['request']
+    if len(parts := req.path.split("/")[2:]) < 2:
+        return None
+    return mapping.get(parts[0], {}).get(parts[1])
+
+def url(path, **kwargs):
+    return path if len(kwargs) == 0 else '{}?{}'.format(path, urlencode(kwargs))
+
+def chopped(text, max_length=35):
+    if text is None:
+        return ''
+    return text if len(text) < max_length else '{}...'.format(text[:max_length])
+
+def main(**kwargs):
+    req = kwargs['request']
+    if req.path.split("/")[-1] == "modal":
+        yield _modal(**kwargs)
+        return
+    yield ""
+
+import autotest
+test = autotest.get_tester(__name__)
+
+
+@test
+def test_find_sub_path():
+    def method(): pass
+
+    class MockRequest:
+        def __init__(self, path):
+            self.path = path
+    test.eq(None, findSubPath(dict(category=dict(action=method)), request=MockRequest("/")))
+    test.eq(None, findSubPath(dict(category=dict(action=method)), request=MockRequest("/something")))
+    test.eq(None, findSubPath(dict(category=dict(action=method)), request=MockRequest("/somewhere/action")))
+    test.eq(None, findSubPath(dict(category=dict(action=method)), request=MockRequest("/somewhere/something")))
+    test.eq(method, findSubPath(dict(something=dict(action=method)), request=MockRequest("/somewhere/something/action")))
+    test.eq(method, findSubPath(dict(render=dict(fields=method)), request=MockRequest("/query/render/fields")))
+
+@test
+def test_url():
+    test.eq("/", url("/"))
+    test.eq("/?key=value", url("/", key="value"))
+    test.eq("/?key=value+%26+value", url("/", key="value & value"))
+
+@test
+def test_chopped():
+    test.eq("", chopped(None))
+    test.eq(38, len(chopped(50 * "X")))
+    test.eq("abc...", chopped("abcdef", 3))
+

@@ -1,5 +1,6 @@
 import sys
 import pathlib
+from aiohttp.web import HTTPFound
 
 class PathModify:
     def __init__(self):
@@ -40,6 +41,14 @@ class Dict(dict):
             return self[key]
         return dict.__getattribute__(self, key)
 
+def user_required(func):
+    def check_user(*args, **kwargs):
+        session = kwargs.get("session")
+        if session and session.get("user") is not None:
+            return func(*args, **kwargs)
+        raise HTTPFound('/login')
+    return check_user
+
 
 import autotest
 test = autotest.get_tester(__name__)
@@ -74,3 +83,34 @@ def test_clean_up_imports(tmp_path):
             test.truth("clean_up_test" in sys.modules)
 
         test.truth("clean_up_test" not in sys.modules)
+
+@test
+def test_user_required(tmp_path):
+    called = []
+    @user_required
+    def sub(**kwargs):
+        called.append(None)
+
+    try:
+        sub()
+        assert False
+    except HTTPFound as e:
+        test.eq("/login", e.location)
+    test.eq(0, len(called))
+
+    try:
+        sub(session={})
+        assert False
+    except HTTPFound as e:
+        test.eq("/login", e.location)
+    test.eq(0, len(called))
+
+    try:
+        sub(session={"user": None})
+    except HTTPFound as e:
+        test.eq("/login", e.location)
+    test.eq(0, len(called))
+
+    sub(session={"user": True})
+    test.eq(1, len(called))
+

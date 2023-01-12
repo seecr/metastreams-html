@@ -32,7 +32,7 @@ from .static_handler import static_handler
 from .dynamic_handler import dynamic_handler
 
 
-def create_server_app(module_names, index, context=None, static_dir=None, static_path="/static", enable_sessions=True):
+def create_server_app(module_names, index, context=None, static_dirs=None, static_path="/static", enable_sessions=True, session_cookie_name="METASTREAMS_SESSION"):
     imported_modules = [import_module(name) for name in module_names]
 
     loop = asyncio.get_event_loop()
@@ -42,9 +42,13 @@ def create_server_app(module_names, index, context=None, static_dir=None, static
 
     app = aiohttp_web.Application()
     routes = []
-    if static_dir is not None:
-        routes.append(aiohttp_web.get(static_path + '/{tail:.+}', static_handler(static_dir, static_path)))
-    routes.append(aiohttp_web.route('*', '/{tail:.*}', dynamic_handler(dHtml, enable_sessions=enable_sessions)))
+    if static_dirs is not None:
+        routes.append(aiohttp_web.get(static_path + '/{tail:.+}', static_handler(static_dirs, static_path)))
+    routes.append(aiohttp_web.route(
+        '*', '/{tail:.*}',
+        dynamic_handler(dHtml,
+            enable_sessions=enable_sessions,
+            session_cookie_name=session_cookie_name)))
     app.add_routes(routes)
     return app
 
