@@ -29,9 +29,13 @@ from setuptools import setup, find_packages
 packages=find_packages(exclude=('metastreams',))
 packages=find_packages() #DO_NOT_DISTRIBUTE
 
+
 setup(
     name='metastreams-html',
     packages=packages,
+    package_data={
+        'metastreams.html.templates': ['*.sf'],
+    },
     scripts=['bin/metastreams-html-server'],
     version='%VERSION%',
     author='Seecr (Seek You Too B.V.)',
