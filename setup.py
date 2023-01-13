@@ -25,16 +25,24 @@
 ## end license ##
 
 from setuptools import setup, find_packages
+from os import walk
+from os.path import join
 
-packages=find_packages(exclude=('metastreams',))
-packages=find_packages() #DO_NOT_DISTRIBUTE
+name = 'metastreams-html'
+packages = find_packages(exclude=('metastreams',))
+packages = find_packages() #DO_NOT_DISTRIBUTE
+
+data_files = []
+for path, dirs, files in walk('usr-share'):
+    data_files.append((path.replace('usr-share', f'/usr/share/{name}'), [join(path, f) for f in files]))
 
 setup(
-    name='metastreams-html',
+    name=name,
     packages=packages,
     package_data={
         'metastreams.html': ['templates/*.sf'],
     },
+    data_files=data_files,
     scripts=['bin/metastreams-html-server'],
     version='%VERSION%',
     author='Seecr (Seek You Too B.V.)',
