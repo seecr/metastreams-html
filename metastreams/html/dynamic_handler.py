@@ -67,7 +67,8 @@ def dynamic_handler(dHtml, enable_sessions=True, session_cookie_name="METASTREAM
                 await response.write(bytes(json.dumps(result), encoding="utf-8"))
         else:
             try:
-                for each in dHtml.handle_request(request=request, response=response, session=session):
+                result = await dHtml.handle_request(request=request, response=response, session=session)
+                async for each in result:
                     await prepare(request, response, cookie, session, content_type='text/html; charset=utf-8')
                     await response.write(bytes(each, encoding="utf-8"))
             except aiohttp_web.HTTPException:
@@ -118,8 +119,13 @@ async def test_page_render(tmp_path):
     class MockDynamicHtml:
         def __init__(self, response):
             self._response = response
-        def handle_request(self, *args, **kwargs):
-            return self._response
+        async def handle_request(self, *args, **kwargs):
+            async def _render():
+                async def desync():
+                    for x in self._response: yield x
+                async for each in desync():
+                    yield each
+            return _render()
 
     handler = dynamic_handler(MockDynamicHtml(["This", "Is", "The", "Result"]))
     request = MockRequest(path="/")

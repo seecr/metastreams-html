@@ -110,12 +110,7 @@ def card(tag, content, title=None, **kwargs):
         with tag("div.card-body"):
             yield content(tag=tag, **kwargs)
 
-def _modal(tag, request, **kwargs):
-    id_ = request.query.get('id', "")
-    title = request.query.get('title', "")
-    size = request.query.get('size', "")
-    save_button = request.query.get('save-button', "")
-
+def modal(tag, id_, title="", size="", save_button=False):
     with tag("div.modal", id_=id_, tabindex=-1, **{'aria-hidden': 'true'}):
         with tag("div.modal-dialog", class_=[f'modal-{size}'] if size in ["sm", "lg", "xl"] else []):
             with tag("div.modal-content"):
@@ -127,9 +122,16 @@ def _modal(tag, request, **kwargs):
                     pass
                 with tag("div.modal-footer"):
                     with tag("button.btn.btn-secondary", type_="button", **{"data-bs-dismiss": "modal"}): yield "Close"
-                    if save_button != "":
+                    if save_button is True:
                         with tag("button.btn.btn-primary", id_=save_button): yield "Save"
 
+
+def _modal(tag, request, **kwargs):
+    id_ = request.query.get('id', "")
+    title = request.query.get('title', "")
+    size = request.query.get('size', "")
+    save_button = request.query.get('save-button', "")
+    yield modal(tag, id_, title, size, save_button != "")
 
 def findSubPath(mapping, **kwargs):
     req = kwargs['request']
