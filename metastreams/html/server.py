@@ -32,7 +32,7 @@ from .static_handler import static_handler
 from .dynamic_handler import dynamic_handler
 
 
-def create_server_app(module_names, index, context=None, static_dirs=None, static_path="/static", enable_sessions=True, session_cookie_name="METASTREAMS_SESSION"):
+def create_server_app(module_names, index, context=None, static_dirs=None, static_path="/static", enable_sessions=True, session_cookie_name="METASTREAMS_SESSION", additional_routes=None):
     imported_modules = [import_module(name) for name in module_names]
 
     loop = asyncio.get_event_loop()
@@ -41,7 +41,7 @@ def create_server_app(module_names, index, context=None, static_dirs=None, stati
     dHtml.run(loop)
 
     app = aiohttp_web.Application()
-    routes = []
+    routes = additional_routes or []
     if static_dirs is not None:
         routes.append(aiohttp_web.get(static_path + '/{tail:.+}', static_handler(static_dirs, static_path)))
     routes.append(aiohttp_web.route(
@@ -60,3 +60,20 @@ async def create_server(port, *args, **kwargs):
     await runner.setup()
     site = aiohttp_web.TCPSite(runner, port=port)
     await site.start()
+
+import autotest
+test = autotest.get_tester(__name__)
+
+@test
+def test_additional_routes():
+    app = create_server_app([], "index")
+    test.eq(1, len(app.router.routes()))
+
+    app = create_server_app([], "index", additional_routes=[aiohttp_web.route("get", "/test", lambda: None)])
+    test.eq(2, len(app.router.routes()))
+
+    app = create_server_app([], "index", additional_routes=[
+        aiohttp_web.route("get", "/test", lambda: None),
+        aiohttp_web.post("/test", lambda: None),
+    ])
+    test.eq(3, len(app.router.routes()))
