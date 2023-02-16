@@ -26,6 +26,8 @@
 import sys
 import pathlib
 from aiohttp.web import HTTPFound
+import json
+from urllib.parse import parse_qs
 
 class PathModify:
     def __init__(self):
@@ -73,6 +75,24 @@ def user_required(func):
             return func(*args, **kwargs)
         raise HTTPFound('/login')
     return check_user
+
+async def arguments_from_request(request, required, convert=None):
+    convert = convert or {}
+    body = await request.text()
+    try:
+        values = {each['name']: each['value'] for each in json.loads(body) if each['name'] in required}
+    except json.decoder.JSONDecodeError:
+        values = {key: value[0] for key, value in parse_qs(body).items() if key in required}
+
+    if required.intersection(set(values.keys())) != required:
+        return Dict()
+
+    for name, method in convert.items():
+        try:
+            values[name] = method(values[name])
+        except:
+            pass
+    return Dict(values)
 
 
 import autotest
@@ -138,4 +158,25 @@ def test_user_required(tmp_path):
 
     sub(session={"user": True})
     test.eq(1, len(called))
+
+@test
+async def test_arguments_from_request():
+    class Request:
+        def __init__(self, text):
+            self._text = text
+        async def text(self):
+            return self._text
+
+    test.eq({}, await arguments_from_request(Request(""), required=set()))
+    test.eq({}, await arguments_from_request(Request(""), required={"arg"}))
+
+    test.eq({'arg': "1"}, await arguments_from_request(Request("arg=1"), required={"arg"}))
+    test.eq({'arg': "1"}, await arguments_from_request(Request("arg=1&another=2"), required={"arg"}))
+    test.eq({'arg': 1}, await arguments_from_request(Request("arg=1"), required={"arg"}, convert=dict(arg=int)))
+    test.eq({'arg': "1"}, await arguments_from_request(Request("arg=1"), required={"arg"}, convert=dict(arg=lambda x: int(x)/0)))
+
+    test.eq({'arg': "1"}, await arguments_from_request(Request('[{"name": "arg", "value": "1"}]'), required={"arg"}))
+    test.eq({'arg': "1"}, await arguments_from_request(Request('[{"name": "arg", "value": "1"}, {"name": "other", "value": "2"}]'), required={"arg"}))
+    test.eq({'arg': 1}, await arguments_from_request(Request('[{"name": "arg", "value": "1"}]'), required={"arg"}, convert=dict(arg=int)))
+    test.eq({'arg': "1"}, await arguments_from_request(Request('[{"name": "arg", "value": "1"}]'), required={"arg"}, convert=dict(arg=lambda x: int(x)/0)))
 
