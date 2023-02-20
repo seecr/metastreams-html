@@ -82,7 +82,7 @@ async def arguments_from_request(request, required, convert=None):
     try:
         values = {each['name']: each['value'] for each in json.loads(body) if each['name'] in required}
     except json.decoder.JSONDecodeError:
-        values = {key: value[0] for key, value in parse_qs(body).items() if key in required}
+        values = {key: value[0] for key, value in parse_qs(body, keep_blank_values=True).items() if key in required}
 
     if required.intersection(set(values.keys())) != required:
         return Dict()
@@ -170,13 +170,16 @@ async def test_arguments_from_request():
     test.eq({}, await arguments_from_request(Request(""), required=set()))
     test.eq({}, await arguments_from_request(Request(""), required={"arg"}))
 
+    test.eq({'arg': ""}, await arguments_from_request(Request("arg="), required={"arg"}))
     test.eq({'arg': "1"}, await arguments_from_request(Request("arg=1"), required={"arg"}))
     test.eq({'arg': "1"}, await arguments_from_request(Request("arg=1&another=2"), required={"arg"}))
     test.eq({'arg': 1}, await arguments_from_request(Request("arg=1"), required={"arg"}, convert=dict(arg=int)))
     test.eq({'arg': "1"}, await arguments_from_request(Request("arg=1"), required={"arg"}, convert=dict(arg=lambda x: int(x)/0)))
 
+    test.eq({'arg': ""}, await arguments_from_request(Request('[{"name": "arg", "value": ""}]'), required={"arg"}))
     test.eq({'arg': "1"}, await arguments_from_request(Request('[{"name": "arg", "value": "1"}]'), required={"arg"}))
     test.eq({'arg': "1"}, await arguments_from_request(Request('[{"name": "arg", "value": "1"}, {"name": "other", "value": "2"}]'), required={"arg"}))
     test.eq({'arg': 1}, await arguments_from_request(Request('[{"name": "arg", "value": "1"}]'), required={"arg"}, convert=dict(arg=int)))
     test.eq({'arg': "1"}, await arguments_from_request(Request('[{"name": "arg", "value": "1"}]'), required={"arg"}, convert=dict(arg=lambda x: int(x)/0)))
+
 
