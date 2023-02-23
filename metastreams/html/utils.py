@@ -76,6 +76,15 @@ def user_required(func):
         raise HTTPFound('/login')
     return check_user
 
+def user_admin(func):
+    def check_user(*args, **kwargs):
+        session = kwargs.get("session")
+        if session and (user := session.get("user")) is not None and user.get("admin", False) is True:
+
+            return func(*args, **kwargs)
+        raise HTTPFound('/login')
+    return check_user
+
 async def arguments_from_request(request, required, convert=None):
     convert = convert or {}
     body = await request.text()
@@ -158,6 +167,24 @@ def test_user_required(tmp_path):
 
     sub(session={"user": True})
     test.eq(1, len(called))
+
+@test
+def test_user_admin(tmp_path):
+    called = []
+    @user_admin
+    def sub(**kwargs):
+        called.append(None)
+
+    try:
+        sub()
+        test.fail()
+    except HTTPFound as e:
+        test.eq("/login", e.location)
+    test.eq(0, len(called))
+
+    sub(session={"user": {"admin": True}})
+    test.eq(1, len(called))
+
 
 @test
 async def test_arguments_from_request():
