@@ -91,7 +91,7 @@ async def arguments_from_request(request, required, convert=None):
         try:
             values[name] = method(values[name])
         except:
-            pass
+            del values[name] 
     return Dict(values)
 
 
@@ -174,12 +174,12 @@ async def test_arguments_from_request():
     test.eq({'arg': "1"}, await arguments_from_request(Request("arg=1"), required={"arg"}))
     test.eq({'arg': "1"}, await arguments_from_request(Request("arg=1&another=2"), required={"arg"}))
     test.eq({'arg': 1}, await arguments_from_request(Request("arg=1"), required={"arg"}, convert=dict(arg=int)))
-    test.eq({'arg': "1"}, await arguments_from_request(Request("arg=1"), required={"arg"}, convert=dict(arg=lambda x: int(x)/0)))
+    test.eq({}, await arguments_from_request(Request("arg=1"), required={"arg"}, convert=dict(arg=lambda x: int(x)/0)))
 
     test.eq({'arg': ""}, await arguments_from_request(Request('[{"name": "arg", "value": ""}]'), required={"arg"}))
     test.eq({'arg': "1"}, await arguments_from_request(Request('[{"name": "arg", "value": "1"}]'), required={"arg"}))
     test.eq({'arg': "1"}, await arguments_from_request(Request('[{"name": "arg", "value": "1"}, {"name": "other", "value": "2"}]'), required={"arg"}))
     test.eq({'arg': 1}, await arguments_from_request(Request('[{"name": "arg", "value": "1"}]'), required={"arg"}, convert=dict(arg=int)))
-    test.eq({'arg': "1"}, await arguments_from_request(Request('[{"name": "arg", "value": "1"}]'), required={"arg"}, convert=dict(arg=lambda x: int(x)/0)))
+    test.eq({}, await arguments_from_request(Request('[{"name": "arg", "value": "1"}]'), required={"arg"}, convert=dict(arg=lambda x: int(x)/0)))
 
 

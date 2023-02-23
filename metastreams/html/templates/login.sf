@@ -33,12 +33,18 @@ async def validate(request, session, context, **kwargs):
     params = parse_qs(body)
     username = params.get('username', [None])[0]
     password = params.get('password', [None])[0]
-    if context.password_file.validateUser(username, password):
-        session['user'] = username
+
+    if (user := _get_user(context.password_file, username, password)) is not None:
+        session['user'] = user
         return "/"
 
     session['login-error-message'] = 'Incorrect username/password'
     return "/login"
+ 
+def _get_user(password_file, username, password):
+    if password_file.validateUser(username, password):
+        data = password_file.resolve_user(username)
+        return data or username
 
 
 def main(*args, **kwargs):
@@ -71,3 +77,21 @@ def content(tag, session, title, *args, **kwargs):
                         with tag("input.form-control", type_="password", name="password", placeholder="Password"): pass
                     with tag("button.btn.btn-primary"): yield "Login"
 
+import autotest
+test = autotest.get_tester(__name__)
+
+@test
+def test_get_user(tmp_path):
+    from metastreams.html.passwordfile2 import PasswordFile2
+    pf = PasswordFile2(tmp_path / "passwd")
+    pf.addUser("user_42", "correct")
+    test.eq(None, _get_user(pf, "user_41", "correct"))
+    test.eq(None, _get_user(pf, "user_42", "wrong"))
+    test.eq("user_42", _get_user(pf, "user_42", "correct"))
+
+    class UserResolve:
+        def resolve_user(self, username):
+            return dict(username=username)
+
+    pf = PasswordFile2(tmp_path / "passwd", user_resolve=UserResolve())
+    test.eq(dict(username="user_42"), _get_user(pf, "user_42", "correct"))

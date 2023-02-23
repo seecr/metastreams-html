@@ -9,18 +9,23 @@ from pathlib import Path
 ph = PasswordHasher()
 
 class PasswordFile2(object):
-    def __init__(self, filepath):
+    def __init__(self, filepath, user_resolve=None):
         if isinstance(filepath, Path):
             filepath = filepath.as_posix()
         self._storage = _Storage(filepath)
+        self._user_resolve = user_resolve
 
     def addUser(self, username, password):
         if self.hasUser(username):
             raise ValueError('User already exists.')
         self._storage.set(username, ph.hash(password))
+        if self._user_resolve is not None:
+            self._user_resolve.add_user(username)
 
     def removeUser(self, username):
         self._storage.remove(username)
+        if self._user_resolve is not None:
+            self._user_resolve.remove_user(username)
 
     def validateUser(self, username, password):
         hashed = self._storage.get(username)
@@ -44,6 +49,11 @@ class PasswordFile2(object):
 
     def hasUser(self, username):
         return username in self._storage.listkeys()
+    
+    def resolve_user(self, username):
+        if self._user_resolve is None:
+            return None
+        return self._user_resolve.resolve_user(username)
 
 class _Storage(object):
     version = 3
@@ -89,4 +99,68 @@ class _Storage(object):
         chmod(self._filepath, S_IREAD | S_IWRITE)
 
 __all__ = ['PasswordFile2']
+
+
+import autotest
+test = autotest.get_tester(__name__)
+
+@test
+def test_add_user(tmp_path):
+    pf = PasswordFile2(tmp_path / "passwd")
+    test.truth(not pf.hasUser("aap"))
+    pf.addUser("aap", "noot")
+    test.truth(pf.hasUser("aap"))
+
+    try:
+        pf.addUser("aap", "noot")
+        test.fail()
+    except ValueError as e:
+        test.eq("User already exists.", str(e))
+
+@test
+def test_add_user_resolve(tmp_path):
+    calls = []
+    class Users:
+        def add_user(self, username):
+            calls.append(username)
+
+    pf = PasswordFile2(tmp_path / "passwd", user_resolve=Users())
+    test.eq(0, len(calls))
+    pf.addUser("aap", "noot")
+    test.eq(1, len(calls))
+    try:
+        pf.addUser("aap", "noot")
+        test.fail()
+    except ValueError as e:
+        test.eq("User already exists.", str(e))
+    test.eq(1, len(calls))
+
+@test
+def test_remove_user_resolve(tmp_path):
+    calls = []
+    class Users:
+        def remove_user(self, username):
+            calls.append(username)
+    pf = PasswordFile2(tmp_path / "passwd")
+    pf.addUser("aap", "noot")
+
+    pf = PasswordFile2(tmp_path / "passwd", user_resolve=Users())
+    test.eq(0, len(calls))
+    pf.removeUser("aap")
+    test.eq(1, len(calls))
+
+
+@test
+def test_resolve_user(tmp_path):
+    pf = PasswordFile2(tmp_path / "passwd")
+    test.eq(None, pf.resolve_user("aap"))
+    pf.addUser("aap", "noot")
+    test.eq(None, pf.resolve_user("aap"))
+
+    class UserResolve:
+        def resolve_user(self, username):
+            return {"name": username, "admin": False}
+    pf = PasswordFile2(tmp_path / "passwd", user_resolve=UserResolve())
+    user = pf.resolve_user("aap")
+    test.eq({'name': 'aap', 'admin': False}, user)
 

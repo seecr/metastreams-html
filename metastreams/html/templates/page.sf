@@ -75,7 +75,7 @@ def render(content, homeUrl="/", top_bar=True, stylesheets=None, javascripts=Non
                                         with tag("a.nav-link.dropdown-toggle", id_="user-menu-dropdown", role="button", 
                                                 **{ 'data-bs-toggle': 'dropdown',
                                                     'aria-expanded': 'false'}):
-                                            yield user
+                                            yield user if isinstance(user, str) else user.get("username")
                                         with tag("ul.dropdown-menu.dropdown-menu-end", **{'aria-labelledby': 'user-menu-dropdown'}):
                                             with tag("li"):
                                                 with tag("a.dropdown-item", href='/account'): yield "Account"
