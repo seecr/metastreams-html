@@ -1,3 +1,28 @@
+## begin license ##
+#
+# "Metastreams Html" is a template engine based on generators, and a sequel to Slowfoot.
+# It is also known as "DynamicHtml" or "Seecr Html".
+#
+# Copyright (C) 2023 Seecr (Seek You Too B.V.) https://seecr.nl
+#
+# This file is part of "Metastreams Html"
+#
+# "Metastreams Html" is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# "Metastreams Html" is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with "Metastreams Html"; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+## end license ##
+
 from json import load, dump
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError, InvalidHash
@@ -10,9 +35,11 @@ ph = PasswordHasher()
 
 class PasswordFile2(object):
     def __init__(self, filepath, user_resolve=None):
-        if isinstance(filepath, Path):
-            filepath = filepath.as_posix()
-        self._storage = _Storage(filepath)
+        if isinstance(filepath, str):
+            filepath = Path(filepath)
+        if filepath.is_dir():
+            filepath /= "passwd"
+        self._storage = _Storage(filepath.as_posix())
         self._user_resolve = user_resolve
 
     def addUser(self, username, password):
@@ -164,3 +191,9 @@ def test_resolve_user(tmp_path):
     user = pf.resolve_user("aap")
     test.eq({'name': 'aap', 'admin': False}, user)
 
+@test
+def test_filename_password_file(tmp_path):
+    pf = PasswordFile2(tmp_path / "passwd")
+    test.eq((tmp_path / "passwd").as_posix(), pf._storage._filepath)
+    pf = PasswordFile2(tmp_path)
+    test.eq((tmp_path / "passwd").as_posix(), pf._storage._filepath)
