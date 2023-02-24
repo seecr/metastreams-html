@@ -39,6 +39,12 @@ async def prepare(request, response, cookie, session, content_type=None):
         cookie.write_to_response(response, session.identifier)
     await response.prepare(request)
 
+def as_bytes(value):
+    if isinstance(value, bytes):
+        return value
+    if not isinstance(value, str):
+        value = str(value)
+    return bytes(value, encoding='utf-8')
 
 def dynamic_handler(dHtml, enable_sessions=True, session_cookie_name="METASTREAMS_SESSION"):
     cookie, session_store = None, None
@@ -64,19 +70,19 @@ def dynamic_handler(dHtml, enable_sessions=True, session_cookie_name="METASTREAM
                 raise redirect
             elif isinstance(result, dict):
                 await prepare(request, response, cookie, session, content_type='application/json; charset=utf-8')
-                await response.write(bytes(json.dumps(result), encoding="utf-8"))
+                await response.write(as_bytes(json.dumps(result)))
         else:
             try:
                 result = await dHtml.handle_request(request=request, response=response, session=session)
                 async for each in result:
                     await prepare(request, response, cookie, session, content_type='text/html; charset=utf-8')
-                    await response.write(bytes(each, encoding="utf-8"))
+                    await response.write(as_bytes(each))
             except aiohttp_web.HTTPException:
                 raise
             except Exception as e:
                 errorMsg = b"<pre class='alert alert-dark text-decoration-none fs-6 font-monospace'>"
-                errorMsg += bytes(str(e), encoding="utf-8") + b"<br/>"
-                errorMsg += bytes(traceback.format_exc(), encoding="utf-8") + b"</pre>"
+                errorMsg += as_bytes(str(e)) + b"<br/>"
+                errorMsg += as_bytes(traceback.format_exc()) + b"</pre>"
 
                 await prepare(request, response, cookie, session)
                 await response.write(errorMsg)
@@ -114,8 +120,7 @@ class MockRequest:
         pass
 
 
-@test
-async def test_page_render(tmp_path):
+class test_rendering:
     class MockDynamicHtml:
         def __init__(self, response):
             self._response = response
@@ -127,10 +132,26 @@ async def test_page_render(tmp_path):
                     yield each
             return _render()
 
-    handler = dynamic_handler(MockDynamicHtml(["This", "Is", "The", "Result"]))
-    request = MockRequest(path="/")
-    response = await handler(request)
-    test.eq(b"ThisIsTheResult", request._payload_writer.content)
+    @test(bind=True)
+    async def test_page_render(tmp_path):
+        handler = dynamic_handler(MockDynamicHtml(["This", "Is", "The", "Result"]))
+        request = MockRequest(path="/")
+        response = await handler(request)
+        test.eq(b"ThisIsTheResult", request._payload_writer.content)
+
+    @test(bind=True)
+    async def test_page_render_with_bytes(tmp_path):
+        handler = dynamic_handler(MockDynamicHtml(["These", "Are", b"Bytes"]))
+        request = MockRequest(path="/")
+        response = await handler(request)
+        test.eq(b"TheseAreBytes", request._payload_writer.content)
+
+    @test(bind=True)
+    async def test_page_render_with_other_data(tmp_path):
+        handler = dynamic_handler(MockDynamicHtml(["Make", "It", b"Bytes: ", 42, ", ", {"key":"value"}, ', ', ('tuple',)]))
+        request = MockRequest(path="/")
+        response = await handler(request)
+        test.eq(b"MakeItBytes: 42, {'key': 'value'}, ('tuple',)", request._payload_writer.content)
 
 @test
 async def test_error_message_rendering():
@@ -179,4 +200,11 @@ async def test_post_request_dict_():
 
     test.eq("application/json; charset=utf-8", response.headers['Content-Type'])
     test.eq(b'{"success": true}', request._payload_writer.content)
+
+# @test
+# async def handle_bytes_data():
+#     class MockDynamicHtml:
+#         async def handle_request(self, response, **kwargs):
+#             response.headers['Content-Type'] = 'application/octet-stream'
+#             yield b'bytes'
 
