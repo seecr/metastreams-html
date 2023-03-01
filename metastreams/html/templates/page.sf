@@ -32,11 +32,12 @@ def render(content, homeUrl="/", top_bar=True, stylesheets=None, javascripts=Non
     stylesheets = ['common.css'] + (stylesheets or [])
 
     tag = kwargs['tag']
+    language = kwargs.get('language', 'nl')
     session = kwargs['session']
     title = kwargs.get("title", "Metastreams")
     user = session.get("user", None)
     yield tag.as_is("<!DOCTYPE html>")
-    with tag("html.h-100"):
+    with tag("html.h-100", lang=language):
         with tag("head"):
             with tag("title"):
                 yield title
@@ -61,7 +62,7 @@ def render(content, homeUrl="/", top_bar=True, stylesheets=None, javascripts=Non
                     with tag("div.container-fluid"):
                         with tag("a.navbar-brand.normal", href=homeUrl):
                             yield title
-                        with tag("button.navbar-toggler", type_="button", 
+                        with tag("button.navbar-toggler", type_="button",
                                 **{ 'data-bs-toggle': 'collapse',
                                     'data-bs-target': '#navbar-content',
                                     'aria-controls': 'navbar-content',
@@ -72,7 +73,7 @@ def render(content, homeUrl="/", top_bar=True, stylesheets=None, javascripts=Non
                             with tag("ul.navbar-nav.ms-auto"):
                                 if user is not None:
                                     with tag("li.nav-item.dropdown"):
-                                        with tag("a.nav-link.dropdown-toggle", id_="user-menu-dropdown", role="button", 
+                                        with tag("a.nav-link.dropdown-toggle", id_="user-menu-dropdown", role="button",
                                                 **{ 'data-bs-toggle': 'dropdown',
                                                     'aria-expanded': 'false'}):
                                             yield user if isinstance(user, str) else user.get("username")
