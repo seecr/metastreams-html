@@ -85,6 +85,21 @@ def user_admin(func):
         raise HTTPFound('/login')
     return check_user
 
+
+# use as fixture
+def guarded_path(tmp_path):
+    modules = sys.modules.copy()
+    assert isinstance(tmp_path, pathlib.Path)
+    path = tmp_path.as_posix()
+    sys.path.insert(0, path)
+    yield tmp_path
+    p = sys.path.pop(0)
+    assert p == path
+    for m in set(sys.modules):
+        if m not in modules:
+            sys.modules.pop(m)
+
+
 async def arguments_from_request(request, required, convert=None):
     convert = convert or {}
     body = await request.text()
@@ -100,7 +115,7 @@ async def arguments_from_request(request, required, convert=None):
         try:
             values[name] = method(values[name])
         except:
-            del values[name] 
+            del values[name]
     return Dict(values)
 
 
