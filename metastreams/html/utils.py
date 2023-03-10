@@ -29,39 +29,6 @@ from aiohttp.web import HTTPFound
 import json
 from urllib.parse import parse_qs
 
-class PathModify:
-    def __init__(self):
-        self._paths = []
-
-    def add_path(self, path):
-        if isinstance(path, pathlib.Path):
-            path = path.as_posix()
-        if path not in self._paths:
-            self._paths.append(path)
-            sys.path.insert(0, path)
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, type, value, tb):
-        for path in self._paths:
-            if (i := sys.path.index(path)) > -1:
-                sys.path.pop(i)
-
-
-class RevertImports:
-    def __init__(self):
-        self._modules = sys.modules.copy()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, type, values, tb):
-        for each in list(sys.modules.keys()):
-            if each not in self._modules:
-                sys.modules.pop(each)
-
-
 class Dict(dict):
     def __getattribute__(self, key):
         if key in self:
@@ -86,20 +53,6 @@ def user_admin(func):
     return check_user
 
 
-# use as fixture
-def guarded_path(tmp_path):
-    modules = sys.modules.copy()
-    assert isinstance(tmp_path, pathlib.Path)
-    path = tmp_path.as_posix()
-    sys.path.insert(0, path)
-    yield tmp_path
-    p = sys.path.pop(0)
-    assert p == path
-    for m in set(sys.modules):
-        if m not in modules:
-            sys.modules.pop(m)
-
-
 async def arguments_from_request(request, required, convert=None):
     convert = convert or {}
     body = await request.text()
@@ -122,36 +75,6 @@ async def arguments_from_request(request, required, convert=None):
 import autotest
 test = autotest.get_tester(__name__)
 
-
-@test
-def test_cleanup():
-    l = len(sys.path)
-    with PathModify() as pm:
-        pm.add_path("/tmp")
-        test.eq(l + 1, len(sys.path))
-        test.truth("/tmp" in sys.path)
-    test.eq(l, len(sys.path))
-
-@test
-def test_str_or_path(tmp_path):
-    l = len(sys.path)
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        test.eq(l + 1, len(sys.path))
-        test.truth(tmp_path.as_posix() in sys.path)
-    test.eq(l, len(sys.path))
-
-
-@test
-def test_clean_up_imports(tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        (tmp_path / "clean_up_test.py").write_text("def main(): pass")
-        with RevertImports():
-            import clean_up_test
-            test.truth("clean_up_test" in sys.modules)
-
-        test.truth("clean_up_test" not in sys.modules)
 
 @test
 def test_user_required(tmp_path):

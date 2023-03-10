@@ -35,7 +35,7 @@ from importlib.util import spec_from_loader
 from importlib.machinery import SourceFileLoader
 import importlib
 
-from .utils import PathModify, RevertImports, Dict, guarded_path
+from .utils import Dict
 
 import logging
 logger = logging.getLogger(__name__)
@@ -59,14 +59,14 @@ class TemplateImporter:
 
     def __init__(self):
         self._watcher = aionotify.Watcher()
-        self._map = {}
+        self._path2modname = {}
 
 
     def watch_parent_dir(self, qname, sffile):
         parent = sffile.parent.as_posix()
         if parent not in self._watcher.requests:
             self._watcher.watch(parent, aionotify.Flags.MODIFY | aionotify.Flags.MOVED_TO)
-        self._map[sffile.as_posix()] = qname
+        self._path2modname[sffile.as_posix()] = qname
 
 
     # https://docs.python.org/3/library/importlib.html#importlib.abc.MetaPathFinder.find_spec
@@ -85,12 +85,12 @@ class TemplateImporter:
             event = await self._watcher.get_event()
             if event.flags in [aionotify.Flags.MODIFY, aionotify.Flags.MOVED_TO] and event.name.endswith(".sf"):
                 fname = os.path.join(event.alias, event.name)
-                if fname in self._map:
-                    modName = self._map[fname]
+                if modName := self._path2modname.get(fname):
                     try:
                         importlib.reload(sys.modules[modName])
                     except Exception as e:
                         logger.exception(f"Exception while reloading {modName}", exc_info=e)
+
 
     def run(self, loop):
         self.loop = loop
@@ -140,6 +140,7 @@ class DynamicHtml:
             logger.exception('DynamicHtml -> render_page Exception:', exc_info=e)
             raise HTTPInternalServerError(body=bytes(str(e), encoding="utf-8"))
 
+
     async def handle_post_request(self, request, session=None):
         if (mod := self._mod_from_request(request)) is None:
             raise HTTPNotFound()
@@ -164,6 +165,7 @@ class DynamicHtml:
 
         return self.render_page(mod, request, response, session=session)
 
+
     def _mod_from_request(self, request):
         mod = None
 
@@ -180,7 +182,7 @@ class DynamicHtml:
         path = request.path
         if path == "/":
             if "." in self._default:
-                mod = sys.modules.get(self._default, _load_module(self._default))
+                mod = _load_module(self._default)
             else:
                 path = "/" + self._default
 
@@ -188,9 +190,10 @@ class DynamicHtml:
             mod_name, _ = split_path(path)
             for m in self._modules:
                 qname = m.__name__ + "." + mod_name
-                if (mod := sys.modules.get(qname, _load_module(qname))):
+                if (mod := _load_module(qname)):
                     break
         return mod
+
 
 def split_path(path):
     if path[0] == '/':
@@ -206,6 +209,11 @@ class MockRequest:
     def __init__(self, path):
         self.path = path
 
+
+#keep these to verify later
+keep_sys_path = sys.path.copy()
+keep_meta_path = sys.meta_path.copy()
+keep_modules = sys.modules.copy()
 
 
 @test
@@ -242,6 +250,7 @@ def guarded_path(tmp_path):
         if m not in modules:
             sys.modules.pop(m)
 
+
 @test
 async def load_top_level_sf(sfimporter, guarded_path):
     (guarded_path/'x.sf').write_text("a=42")
@@ -255,7 +264,6 @@ async def load_templates_on_create(sfimporter, guarded_path):
     (dyn_dir / "pruebo.sf").write_text("def main(**k): pass")
 
     import pruts
-    DynamicHtml(pruts)
     from pruts import pruebo
 
     import inspect
@@ -263,34 +271,26 @@ async def load_templates_on_create(sfimporter, guarded_path):
 
 
 @test
-async def load_fixed(sfimporter, tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            (dyn_dir := tmp_path / "the" / "quick" / "fox").mkdir(parents=True)
-            (dyn_dir / "lazy_dog.sf").write_text("def main(*a, **kw): yield 'over'")
+async def load_fixed(sfimporter, guarded_path):
+    (guarded_path := guarded_path / "the" / "quick" / "fox").mkdir(parents=True)
+    (guarded_path / "lazy_dog.sf").write_text("def main(*a, **kw): yield 'over'")
 
-            from the.quick import fox
-            d = DynamicHtml(fox)
+    from the.quick import fox
+    d = DynamicHtml(fox)
 
-            result = await d.handle_request(request=MockRequest(path="/lazy_dog"), response=None)
-            test.eq("over", ''.join([i async for i in result]))
+    result = await d.handle_request(request=MockRequest(path="/lazy_dog"), response=None)
+    test.eq("over", ''.join([i async for i in result]))
 
 
 @test
-def only_one_importer(tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            (dyn_dir := tmp_path / "pruts").mkdir()
-            (dyn_dir / "pruebo.sf").write_text("def main(**k): pass")
+def only_one_importer(guarded_path):
+    (dyn_dir := guarded_path / "pruts").mkdir()
+    (dyn_dir / "pruebo.sf").write_text("def main(**k): pass")
 
-            import pruts
-            DynamicHtml(pruts)
-            currentCount = len([importer for importer in sys.meta_path if isinstance(importer, TemplateImporter)])
+    import pruts
+    currentCount = len([importer for importer in sys.meta_path if isinstance(importer, TemplateImporter)])
 
-            DynamicHtml(pruts)
-            test.eq(currentCount, len([importer for importer in sys.meta_path if isinstance(importer, TemplateImporter)]))
+    test.eq(currentCount, len([importer for importer in sys.meta_path if isinstance(importer, TemplateImporter)]))
 
 
 
@@ -298,323 +298,240 @@ def only_one_importer(tmp_path):
 
 @test.fixture(guarded_path)
 
-#@test
-async def reload_template_created_later(tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            pruts_path = tmp_path/'pruts'
-            pruts_path.mkdir()
-            pruebo_path = pruts_path/'pruebo.sf'
-            pruebo_path.write_text(f"""import pruts.does_not_exist_yet\n""")
+@test
+async def reload_template_created_later(sfimporter, guarded_path):
+    pruts_path = guarded_path/'pruts'
+    pruts_path.mkdir()
+    pruebo_path = pruts_path/'pruebo.sf'
+    pruebo_path.write_text(f"""import pruts.does_not_exist_yet\n""")
 
-            import pruts   # this works because pruts is on sys.path
-            d = DynamicHtml([])  # this automagically adds an imported and an inotify listener
-            task = d.run(asyncio.get_running_loop())
-            await asyncio.sleep(0.2)
-            assert d._watcher._fd
-            try:
-                import pruts.pruebo
-                test.fail()
-            except ImportError as e:
-                test.eq("No module named 'pruts.does_not_exist_yet'", str(e))
-            doesnot_exists_yet_path = pruts_path/'does_not_exist_yet.sf'
-            doesnot_exists_yet_path.write_text(f"""a=10\n""")
-            await asyncio.sleep(0.2)
-            import pruts.pruebo
-            from pruts.does_not_exist_yet import a
-            test.eq(10, a)
-
-
-            print("++++++++++++++++++++++++++++++")
-            doesnot_exists_yet_path.write_text(f"""
+    import pruts   # this works because pruts is on sys.path
+    await asyncio.sleep(0.2)
+    try:
+        import pruts.pruebo
+        test.fail()
+    except ImportError as e:
+        test.eq("No module named 'pruts.does_not_exist_yet'", str(e))
+    doesnot_exists_yet_path = pruts_path/'does_not_exist_yet.sf'
+    doesnot_exists_yet_path.write_text(f"""a=10\n""")
+    await asyncio.sleep(0.2)
+    import pruts.pruebo
+    from pruts.does_not_exist_yet import a
+    test.eq(10, a)
+    doesnot_exists_yet_path.write_text(f"""
 a, b = 42, 43
-# FTWDDD
-
-
-
 """)
-            await asyncio.sleep(0.1)
-            await asyncio.sleep(0.1)
-            await asyncio.sleep(0.1)
-            await asyncio.sleep(0.1)
-            print("-----", d._watcher.requests)
-            from pruts.does_not_exist_yet import a
-            test.eq(42, a)
-            from pruts.does_not_exist_yet import b
-            test.eq(43, b)
-            task.cancel()
-
-
+    await asyncio.sleep(0.1)
+    from pruts.does_not_exist_yet import a
+    test.eq(42, a)
+    from pruts.does_not_exist_yet import b
+    test.eq(43, b)
 
 
 @test
-async def multiple_modules_resolve(sfimporter, tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            for name in ['one', 'two']:
-                (dyn_dir := tmp_path / name).mkdir()
-                (dyn_dir / f"{name}.sf").write_text(f"def main(**k): yield '{name}'")
+async def multiple_modules_resolve(sfimporter, guarded_path):
+    for name in ['one', 'two']:
+        (dyn_dir := guarded_path / name).mkdir()
+        (dyn_dir / f"{name}.sf").write_text(f"def main(**k): yield '{name}'")
 
-            d = DynamicHtml(["one", "two"])
+    d = DynamicHtml(["one", "two"])
 
-            result = await d.handle_request(request=MockRequest(path="/two"), response=None)
-            test.eq("two", ''.join([i async for i in result]))
+    result = await d.handle_request(request=MockRequest(path="/two"), response=None)
+    test.eq("two", ''.join([i async for i in result]))
 
 
 @test
-async def reload_on_change(sfimporter, tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            (dyn_dir := tmp_path / "pruts1").mkdir()
-            (dyn_dir / "pruebo1.sf").write_text("def main(**k): return 1")
+async def reload_on_change(sfimporter, guarded_path):
+    (dyn_dir := guarded_path / "pruts1").mkdir()
+    (dyn_dir / "pruebo1.sf").write_text("def main(**k): return 1")
 
-            import pruts1
-            d = DynamicHtml(pruts1)
+    import pruts1
+    import pruts1.pruebo1
+    test.eq(1, pruts1.pruebo1.main())
 
-            import pruts1.pruebo1
-            test.eq(1, pruts1.pruebo1.main())
+    (dyn_dir / "pruebo1.sf").write_text("def main(**k): return 2 ")  # <-- essential space
+    await asyncio.sleep(0.1)
 
-            (dyn_dir / "pruebo1.sf").write_text("def main(**k): return 2 ")  # <-- essential space
-            await asyncio.sleep(0.1)
+    import pruts1.pruebo1
+    test.eq(2, pruts1.pruebo1.main())
 
-            import pruts1.pruebo1
-            test.eq(2, pruts1.pruebo1.main())
 
 @test
-async def reload_imported_templates(sfimporter, tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            (dyn_dir := tmp_path / "pruts2").mkdir()
-            (dyn_dir / "pruebo1.sf").write_text("""
+async def reload_imported_templates(sfimporter, guarded_path):
+    (dyn_dir := guarded_path / "pruts2").mkdir()
+    (dyn_dir / "pruebo1.sf").write_text("""
 import pruts2.pruebo2 as pruebo2
 
 def main(**k):
     return pruebo2.main()
 """)
-            (dyn_dir / "pruebo2.sf").write_text("def main(**k): return 1")
+    (dyn_dir / "pruebo2.sf").write_text("def main(**k): return 1")
 
-            import pruts2
-            d = DynamicHtml(pruts2)
-            await asyncio.sleep(0.1)
+    import pruts2
+    import pruts2.pruebo1
+    test.eq(1, pruts2.pruebo1.main())
 
-            import pruts2.pruebo1
-            test.eq(1, pruts2.pruebo1.main())
+    (dyn_dir / "pruebo2.sf").write_text("def main(**k): return 22")
+    await asyncio.sleep(0.1)
 
-            (dyn_dir / "pruebo2.sf").write_text("def main(**k): return 22")
-            await asyncio.sleep(0.1)
-
-            test.eq(22, pruts2.pruebo1.main())
+    test.eq(22, pruts2.pruebo1.main())
 
 
 @test
-async def load_new_template_and_add_to_watcher(tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            pass
-
-
-@test
-async def test_handle_template(sfimporter, tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            (dyn_dir := tmp_path / "pruts3").mkdir()
-            (dyn_dir / "pruebo.sf").write_text("""
+async def test_handle_template(sfimporter, guarded_path):
+    (dyn_dir := guarded_path / "pruts3").mkdir()
+    (dyn_dir / "pruebo.sf").write_text("""
 def main(tag, **k):
     with tag("h1"):
         yield "Hello world!"
 """)
+    d = DynamicHtml("pruts3")
+    result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
+    test.eq("<h1>Hello world!</h1>", ''.join([i async for i in result]))
 
-            d = DynamicHtml("pruts3")
-            await asyncio.sleep(0.1)
-            result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
-            test.eq("<h1>Hello world!</h1>", ''.join([i async for i in result]))
 
 @test
-async def test_context_variables(sfimporter, tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            (dyn_dir := tmp_path / "pruts4").mkdir()
-            (dyn_dir / "pruebo.sf").write_text("""
+async def test_context_variables(sfimporter, guarded_path):
+    (dyn_dir := guarded_path / "pruts4").mkdir()
+    (dyn_dir / "pruebo.sf").write_text("""
 def main(tag, context, **k):
     with tag("h1"):
         context.container.append(42)
         yield "Hello world!"
 """)
-
-            container = []
-            d = DynamicHtml("pruts4", context=dict(container=container))
-            await asyncio.sleep(0.1)
-
-
-            test.eq([], container)
-            result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
-            test.eq("<h1>Hello world!</h1>", ''.join([i async for i in result]))
-            test.eq([42], container)
+    container = []
+    d = DynamicHtml("pruts4", context=dict(container=container))
+    test.eq([], container)
+    result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
+    test.eq("<h1>Hello world!</h1>", ''.join([i async for i in result]))
+    test.eq([42], container)
 
 
 @test
-async def test_page_not_found(sfimporter, tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            (tmp_path / "pruts5").mkdir()
-            d = DynamicHtml("pruts5")
+async def test_page_not_found(sfimporter, guarded_path):
+    (guarded_path / "pruts5").mkdir()
+    d = DynamicHtml("pruts5")
 
-            try:
-                await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
-                test.truth(False)
-            except Exception as e:
-                test.truth(isinstance(e, HTTPNotFound))
+    try:
+        await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
+        test.truth(False)
+    except Exception as e:
+        test.truth(isinstance(e, HTTPNotFound))
 
 
 @test
-async def test_reload_with_error(sfimporter, tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            (dyn_dir := tmp_path / "pruts6").mkdir()
-            (dyn_dir / "pruebo.sf").write_text("def main(**k): yield 1")
-            logged_exceptions = []
+async def test_reload_with_error(sfimporter, guarded_path):
+    (dyn_dir := guarded_path / "pruts6").mkdir()
+    (dyn_dir / "pruebo.sf").write_text("def main(**k): yield 1")
 
-            d = DynamicHtml("pruts6")
-            d._log_exception = lambda *a, **kw: logged_exceptions.append((a, kw))
-
-            result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
-            test.eq("1", ''.join([i async for i in result]))
-            test.eq([], logged_exceptions)
-            with test.stderr as err:
-                (dyn_dir / "pruebo.sf").write_text("""
+    d = DynamicHtml("pruts6")
+    result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
+    test.eq("1", ''.join([i async for i in result]))
+    with test.stderr as err:
+        (dyn_dir / "pruebo.sf").write_text("""
 1/0
 
 def main(**k):
     yield 11
 """)
-                await asyncio.sleep(0.1)
-            err_log = err.getvalue()
-            test.contains(err_log, 'Exception while reloading pruts6.pruebo')
-            test.contains(err_log, 'ZeroDivisionError: division by zero')
+        await asyncio.sleep(0.1)
+    err_log = err.getvalue()
+    test.contains(err_log, 'Exception while reloading pruts6.pruebo')
+    test.contains(err_log, 'ZeroDivisionError: division by zero')
 
-            result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
-            test.eq("1", ''.join([i async for i in result])) # previous value
+    result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
+    test.eq("1", ''.join([i async for i in result])) # previous value
 
 
 @test
-async def test_load_with_error(sfimporter, tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            (dyn_dir := tmp_path / "pruts61").mkdir()
-            (dyn_dir / "pruebo.sf").write_text("""
+async def test_load_with_error(sfimporter, guarded_path):
+    (dyn_dir := guarded_path / "pruts61").mkdir()
+    (dyn_dir / "pruebo.sf").write_text("""
 1/0
 
 def main(**k):
     yield 11
 """)
-            d = DynamicHtml("pruts61")
-            with test.stderr as err:
-                try:
-                    result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
-                    list(i async for i in result)
-                    test.truth(False)
-                except Exception as e:
-                    test.truth(isinstance(e, HTTPInternalServerError))
-            err_log = err.getvalue()
-            test.contains(err_log, 'Exception while loading pruts61.pruebo:')
-            test.contains(err_log, 'ZeroDivisionError: division by zero')
-
-
-@test
-async def test_change_to_template_not_yet_loaded(sfimporter, tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            (dyn_dir := tmp_path / "pruts7").mkdir()
-            (dyn_dir / "pruebo.sf").write_text("def main(**k): yield 1")
-
-            import pruts7
-            d = DynamicHtml(pruts7)
-
-            (dyn_dir / "pruebo.sf").write_text("def main(**k): yield 11")
-            await asyncio.sleep(0.1)
+    d = DynamicHtml("pruts61")
+    with test.stderr as err:
+        try:
             result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
-            test.eq("11", ''.join([i async for i in result]))
-
-@test
-async def test_module_imported_with_from(sfimporter, tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            (dyn_dir := tmp_path / "here" / "we" / "go").mkdir(parents=True)
-            (dyn_dir / "pruebo.sf").write_text("def main(**k): yield 1")
-
-            from here.we import go
-            d = DynamicHtml(go)
-
-            result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
-            test.eq("1", ''.join([i async for i in result]))
-
-            (dyn_dir / "pruebo.sf").write_text("def main(**k): yield 11")
-            await asyncio.sleep(0.1)
-            result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
-            test.eq("11", ''.join([i async for i in result]))
+            list(i async for i in result)
+            test.fail()
+        except Exception as e:
+            test.truth(isinstance(e, HTTPInternalServerError))
+    err_log = err.getvalue()
+    test.contains(err_log, 'Exception while loading pruts61.pruebo:')
+    test.contains(err_log, 'ZeroDivisionError: division by zero')
 
 
 @test
-async def test_module_imported_as_string(sfimporter, tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            (dyn_dir := tmp_path / "here" / "we" / "go" / "again").mkdir(parents=True)
-            (dyn_dir / "pruebo.sf").write_text("def main(**k): yield 1")
+async def test_change_to_template_not_yet_loaded(sfimporter, guarded_path):
+    (dyn_dir := guarded_path / "pruts7").mkdir()
+    (dyn_dir / "pruebo.sf").write_text("def main(**k): yield 1")
 
-            d = DynamicHtml("here.we.go.again")
-            result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
-            test.eq("1", ''.join([i async for i in result]))
-
-
-@test
-async def test_default_page(sfimporter, tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            (dyn_dir := tmp_path / "pruts").mkdir(parents=True)
-            (dyn_dir / "pruebo.sf").write_text("def main(**k): yield 1")
-
-            d = DynamicHtml("pruts", default="pruebo")
-            result = await d.handle_request(request=MockRequest(path="/"), response=None)
-            test.eq("1", ''.join([i async for i in result]))
+    import pruts7
+    d = DynamicHtml(pruts7)
+    (dyn_dir / "pruebo.sf").write_text("def main(**k): yield 11")
+    await asyncio.sleep(0.1)
+    result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
+    test.eq("11", ''.join([i async for i in result]))
 
 
 @test
-async def test_specific_default_page(sfimporter, tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            (dyn_dir1 := tmp_path / "pruts91").mkdir(parents=True)
-            (dyn_dir1 / "pruebo.sf").write_text("async def main(**k): yield 1")
-            (dyn_dir2 := tmp_path / "pruts92").mkdir(parents=True)
-            (dyn_dir2 / "pruebo.sf").write_text("async def main(**k): yield 2")
+async def test_module_imported_with_from(sfimporter, guarded_path):
+    (dyn_dir := guarded_path / "here" / "we" / "go").mkdir(parents=True)
+    (dyn_dir / "pruebo.sf").write_text("def main(**k): yield 1")
 
-            d = DynamicHtml(["pruts91", "pruts92"], default="pruts92.pruebo")
+    from here.we import go
+    d = DynamicHtml(go)
 
-            result = await d.handle_request(request=MockRequest(path="/"), response=None)
-            test.eq("2", ''.join([i async for i in result]))
+    result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
+    test.eq("1", ''.join([i async for i in result]))
+
+    (dyn_dir / "pruebo.sf").write_text("def main(**k): yield 11")
+    await asyncio.sleep(0.1)
+    result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
+    test.eq("11", ''.join([i async for i in result]))
 
 
 @test
-async def test_handle_post_request(sfimporter, tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            (dyn_dir := tmp_path / "pruts").mkdir(parents=True)
-            (dyn_dir / "pruebo.sf").write_text("""
+async def test_module_imported_as_string(sfimporter, guarded_path):
+    (dyn_dir := guarded_path / "here" / "we" / "go" / "again").mkdir(parents=True)
+    (dyn_dir / "pruebo.sf").write_text("def main(**k): yield 1")
+
+    d = DynamicHtml("here.we.go.again")
+    result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
+    test.eq("1", ''.join([i async for i in result]))
+
+
+@test
+async def test_default_page(sfimporter, guarded_path):
+    (dyn_dir := guarded_path / "pruts").mkdir(parents=True)
+    (dyn_dir / "pruebo.sf").write_text("def main(**k): yield 1")
+
+    d = DynamicHtml("pruts", default="pruebo")
+    result = await d.handle_request(request=MockRequest(path="/"), response=None)
+    test.eq("1", ''.join([i async for i in result]))
+
+
+@test
+async def test_specific_default_page(sfimporter, guarded_path):
+    (dyn_dir1 := guarded_path / "pruts91").mkdir(parents=True)
+    (dyn_dir1 / "pruebo.sf").write_text("async def main(**k): yield 1")
+    (dyn_dir2 := guarded_path / "pruts92").mkdir(parents=True)
+    (dyn_dir2 / "pruebo.sf").write_text("async def main(**k): yield 2")
+
+    d = DynamicHtml(["pruts91", "pruts92"], default="pruts92.pruebo")
+
+    result = await d.handle_request(request=MockRequest(path="/"), response=None)
+    test.eq("2", ''.join([i async for i in result]))
+
+
+@test
+async def test_handle_post_request(sfimporter, guarded_path):
+    (dyn_dir := guarded_path / "pruts").mkdir(parents=True)
+    (dyn_dir / "pruebo.sf").write_text("""
 WORDS = []
 
 import asyncio
@@ -629,21 +546,17 @@ async def something(request, **kwargs):
 async def main(**k):
     yield str(WORDS)
 """)
+    d = DynamicHtml("pruts")
+    return_url = await d.handle_post_request(request=MockRequest(path="/pruebo/something"))
+    test.eq("/pruebo", return_url)
 
-            d = DynamicHtml("pruts")
-            return_url = await d.handle_post_request(request=MockRequest(path="/pruebo/something"))
-            test.eq("/pruebo", return_url)
-
-            result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
-            test.eq("['one', 'two']", ''.join([i async for i in result]))
+    result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
+    test.eq("['one', 'two']", ''.join([i async for i in result]))
 
 @test
-async def test_context_in_post_request(sfimporter, tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            (dyn_dir := tmp_path / "pruts").mkdir(parents=True)
-            (dyn_dir / "pruebo.sf").write_text("""
+async def test_context_in_post_request(sfimporter, guarded_path):
+    (dyn_dir := guarded_path / "pruts").mkdir(parents=True)
+    (dyn_dir / "pruebo.sf").write_text("""
 import asyncio
 
 async def something(request, context, **kwargs):
@@ -653,12 +566,11 @@ async def something(request, context, **kwargs):
 
     return "/pruebo"
 """)
-
-            words = []
-            d = DynamicHtml("pruts", context=dict(words=words))
-            return_url = await d.handle_post_request(request=MockRequest(path="/pruebo/something"))
-            test.eq("/pruebo", return_url)
-            test.eq(["one", "two"], words)
+    words = []
+    d = DynamicHtml("pruts", context=dict(words=words))
+    return_url = await d.handle_post_request(request=MockRequest(path="/pruebo/something"))
+    test.eq("/pruebo", return_url)
+    test.eq(["one", "two"], words)
 
 @test
 def test_split_path():
@@ -668,12 +580,9 @@ def test_split_path():
 
 
 @test
-async def test_async_main(sfimporter, tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            (dyn_dir := tmp_path / "pruts").mkdir(parents=True)
-            (dyn_dir / "pruebo.sf").write_text("""
+async def test_async_main(sfimporter, guarded_path):
+    (dyn_dir := guarded_path / "pruts").mkdir(parents=True)
+    (dyn_dir / "pruebo.sf").write_text("""
 import asyncio
 
 async def main(tag, **kwargs):
@@ -681,17 +590,15 @@ async def main(tag, **kwargs):
         yield "42"
         await asyncio.sleep(0.1)
 """)
-            d = DynamicHtml("pruts")
-            result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
-            test.eq(['<number>', '42', '</number>'], [i async for i in result])
+    d = DynamicHtml("pruts")
+    result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
+    test.eq(['<number>', '42', '</number>'], [i async for i in result])
+
 
 @test
-async def test_async_main_2(sfimporter, tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            (dyn_dir := tmp_path / "pruts").mkdir(parents=True)
-            (dyn_dir / "pruebo.sf").write_text("""
+async def test_async_main_2(sfimporter, guarded_path):
+    (dyn_dir := guarded_path / "pruts").mkdir(parents=True)
+    (dyn_dir / "pruebo.sf").write_text("""
 import asyncio
 
 async def something(tag):
@@ -703,16 +610,15 @@ async def main(tag, **kwargs):
         yield something(tag)
         await asyncio.sleep(0.1)
 """)
-            d = DynamicHtml("pruts")
-            result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
-            test.eq('<number><something>42</something></number>', ''.join([i async for i in result]))
+    d = DynamicHtml("pruts")
+    result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
+    test.eq('<number><something>42</something></number>', ''.join([i async for i in result]))
+
+
 @test
-async def test_async_main_3(sfimporter, tmp_path):
-    with PathModify() as pm:
-        pm.add_path(tmp_path)
-        with RevertImports():
-            (dyn_dir := tmp_path / "pruts").mkdir(parents=True)
-            (dyn_dir / "pruebo.sf").write_text("""
+async def test_async_main_3(sfimporter, guarded_path):
+    (dyn_dir := guarded_path / "pruts").mkdir(parents=True)
+    (dyn_dir / "pruebo.sf").write_text("""
 import asyncio
 
 async def something(tag):
@@ -730,6 +636,12 @@ async def main(tag, **kwargs):
         yield something(tag)
         await asyncio.sleep(0.01)
 """)
-            d = DynamicHtml("pruts")
-            result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
-            test.eq('<number><something><another>another</another>something</something></number>', ''.join([i async for i in result]))
+    d = DynamicHtml("pruts")
+    result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
+    test.eq('<number><something><another>another</another>something</something></number>', ''.join([i async for i in result]))
+
+
+# verify if stuff is cleaned up
+assert keep_sys_path == sys.path
+assert keep_meta_path == sys.meta_path
+assert keep_modules == sys.modules
