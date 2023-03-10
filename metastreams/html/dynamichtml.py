@@ -86,10 +86,11 @@ class TemplateImporter:
             if event.flags in [aionotify.Flags.MODIFY, aionotify.Flags.MOVED_TO] and event.name.endswith(".sf"):
                 fname = os.path.join(event.alias, event.name)
                 if modName := self._path2modname.get(fname):
-                    try:
-                        importlib.reload(sys.modules[modName])
-                    except Exception as e:
-                        logger.exception(f"Exception while reloading {modName}", exc_info=e)
+                    if mod := sys.modules.get(modName):   # might not have been loaded due to (syntax) errors
+                        try:
+                            importlib.reload(mod)
+                        except Exception as e:
+                            logger.exception(f"Exception while reloading {modName}", exc_info=e)
 
 
     def run(self, loop):
@@ -327,6 +328,18 @@ a, b = 42, 43
     from pruts.does_not_exist_yet import b
     test.eq(43, b)
 
+
+@test
+async def reload_after_initially_failing(sfimporter, guarded_path):
+    (guarded_path/'failfirst.sf').write_text("await def f(): return 42")
+    try:
+        import failfirst
+        test.fail()
+    except SyntaxError:
+        pass
+    (guarded_path/'failfirst.sf').write_text("async def f(): return 42")
+    import failfirst
+    test.eq(42, await failfirst.f())
 
 @test
 async def multiple_modules_resolve(sfimporter, guarded_path):

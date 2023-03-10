@@ -6,6 +6,21 @@ from contextlib import contextmanager
 __all__ = ['MockStream', 'CopyTag', 'NoopTag']
 
 
+async def alist(ag):
+    return [x async for x in ag]
+
+
+def anext(s): return s.__anext__()
+
+
+class mock(dict):
+    def __setattr__(self, k, v):
+        self[k] = v
+    def __getattr__(self, k):
+        return self.get(k)
+
+
+
 @contextmanager
 def NoopTag(args):
     yield
