@@ -31,6 +31,7 @@ from .dynamichtml import DynamicHtml, TemplateImporter
 from .static_handler import static_handler
 from .dynamic_handler import dynamic_handler
 
+__all__ = ['create_server_app']
 
 async def create_server_app(module_names, index, context=None, static_dirs=None, static_path="/static", enable_sessions=True, session_cookie_name="METASTREAMS_SESSION", additional_routes=None):
     imported_modules = [import_module(name) for name in module_names]
@@ -66,14 +67,14 @@ import autotest
 test = autotest.get_tester(__name__)
 
 @test
-def test_additional_routes():
-    app = create_server_app([], "index")
+async def test_additional_routes():
+    app = await create_server_app([], "index")
     test.eq(1, len(app.router.routes()))
 
-    app = create_server_app([], "index", additional_routes=[aiohttp_web.route("get", "/test", lambda: None)])
+    app = await create_server_app([], "index", additional_routes=[aiohttp_web.route("get", "/test", lambda: None)])
     test.eq(2, len(app.router.routes()))
 
-    app = create_server_app([], "index", additional_routes=[
+    app = await create_server_app([], "index", additional_routes=[
         aiohttp_web.route("get", "/test", lambda: None),
         aiohttp_web.post("/test", lambda: None),
     ])

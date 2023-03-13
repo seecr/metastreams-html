@@ -36,3 +36,5 @@ from pathlib import Path                                                   #DO_N
 my_dir = Path(__file__).absolute()                                         #DO_NOT_DISTRIBUTE
 usr_share_path = (my_dir.parent.parent.parent / 'usr-share').as_posix()    #DO_NOT_DISTRIBUTE
 
+from .server import *
+from .passwordfile2 import *
