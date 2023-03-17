@@ -48,11 +48,13 @@ class TemplateImporter:
 
     @staticmethod
     async def install():
-        im = next((im for im in sys.meta_path if isinstance(im, TemplateImporter)), None)
-        if not im:
-            im = TemplateImporter()
-            sys.meta_path.append(im)
-            im.run(asyncio.get_running_loop())
+        if im := next((im for im in sys.meta_path if isinstance(im, TemplateImporter)), None):
+            logging.info(f"Watcher: found old TemplateImporter, removing it: {im}.")
+            sys.meta_path.remove(im)
+            im.task.cancel()
+        im = TemplateImporter()
+        sys.meta_path.append(im)
+        im.run(asyncio.get_running_loop())
         await asyncio.sleep(0) # yield task to allow installing watcher task
         return im
 
@@ -77,25 +79,29 @@ class TemplateImporter:
             if sfile.is_file():
                 self.watch_parent_dir(fullname, sfile)
                 return spec_from_loader(fullname, SourceFileLoader(fullname, sfile.as_posix()))
+                # after this point, the import might still fail due to (syntax) errors
 
 
     async def _run(self):
-        await self._watcher.setup(self.loop)
+        await self._watcher.setup(asyncio.get_running_loop())
         while True:
-            event = await self._watcher.get_event()
-            if event.flags in [aionotify.Flags.MODIFY, aionotify.Flags.MOVED_TO] and event.name.endswith(".sf"):
-                fname = os.path.join(event.alias, event.name)
-                if modName := self._path2modname.get(fname):
-                    if mod := sys.modules.get(modName):   # might not have been loaded due to (syntax) errors
-                        try:
-                            importlib.reload(mod)
-                        except Exception as e:
-                            logger.exception(f"Exception while reloading {modName}", exc_info=e)
+            try:
+                event = await self._watcher.get_event()
+                if event.flags in [aionotify.Flags.MODIFY, aionotify.Flags.MOVED_TO] and event.name.endswith(".sf"):
+                    fname = os.path.join(event.alias, event.name)
+                    if modName := self._path2modname.get(fname):
+                        if mod := sys.modules.get(modName):   # might not have been loaded due to (syntax) errors
+                            try:
+                                importlib.reload(mod)
+                            except Exception as e:
+                                logger.exception(f"Exception while reloading {modName}", exc_info=e)
+            except Exception as e:
+                logging.exception(f"Watcher: loop", exc_info=e)
+
 
 
     def run(self, loop):
-        self.loop = loop
-        self.task = loop.create_task(self._run())
+        self.task = asyncio.get_running_loop().create_task(self._run())
         return self.task
 
 
@@ -103,8 +109,8 @@ class TemplateImporter:
 class DynamicHtml:
     def __init__(self, modules, default="index", context=None):
         self._context = Dict(context) if context else None
-        self._modules = [modules] if not isinstance(modules, list) else modules
-        self._modules = [importlib.import_module(mod) if isinstance(mod, str) else mod for mod in self._modules]
+        self._roots = modules if isinstance(modules, list) else [modules]
+        self._roots = [root if isinstance(root, str) else root.__name__ for root in self._roots]
         self._default = default
 
     async def render_page(self, mod, request, response, session=None):
@@ -189,10 +195,14 @@ class DynamicHtml:
 
         if mod is None:
             mod_name, _ = split_path(path)
-            for m in self._modules:
-                qname = m.__name__ + "." + mod_name
-                if (mod := _load_module(qname)):
+            for root in self._roots:
+                qname = root + '.' + mod_name
+                if mod := _load_module(qname):
                     break
+            #for m in self._modules:
+            #    qname = m.__name__ + "." + mod_name
+            #    if (mod := _load_module(qname)):
+            #        break
         return mod
 
 
@@ -218,16 +228,15 @@ keep_modules = sys.modules.copy()
 
 
 @test
-async def load_importer_as_singleton():
+async def remove_old_importer_when_present():
     im0 = await TemplateImporter.install()
     try:
         im1 = await TemplateImporter.install()
-        test.eq(im0, sys.meta_path[-1])
-        test.eq(im0, im1)
-        test.eq(id(im0), id(im1))
+        test.eq(im1, sys.meta_path[-1])
+        test.ne(im0, im1)
     finally:
         im2 = sys.meta_path.pop()
-        test.eq(im0, im2)
+        test.eq(im1, im2)
 
 
 @test.fixture
@@ -657,4 +666,4 @@ async def main(tag, **kwargs):
 # verify if stuff is cleaned up
 assert keep_sys_path == sys.path
 assert keep_meta_path == sys.meta_path
-assert keep_modules == sys.modules
+assert keep_modules == sys.modules, keep_modules.keys() ^ sys.modules.keys()
