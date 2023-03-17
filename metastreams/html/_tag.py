@@ -38,6 +38,11 @@ from weightless.core import compose
 from warnings import warn
 
 from html import escape
+
+
+__all__ = ['tagable']
+
+
 def escapeHtml(s, quote=False):
     return escape(s, quote=quote)
 
@@ -89,7 +94,7 @@ class Tag(object):
         write = self.html.write
         write('<')
         write(self.tag)
-        for k, v in sorted((k,v) for k,v in self.attrs.items() if v):
+        for k, v in sorted((k,v) for k,v in self.attrs.items() if v is not None):
             write(' ')
             write(k)
             write('=')
@@ -167,6 +172,11 @@ def tag_compose(f, __bw_compat__=False):
         finally:
             tag._exit_callback()
     return ctx_man
+
+
+#alias for export
+tagable = tag_compose
+
 
 class AsIs(str):
     def replace(self, *args):
@@ -256,9 +266,9 @@ def test_compose_escapes_content():
 @test
 def test_attrs():
     s = StringIO()
-    with Tag(s, 'a', **{'key': 'value'}):
+    with Tag(s, 'a', **{'key': 'value'}, do_not_include=None, do_include=0):
         s.write('data')
-    test.eq('<a key="value">data</a>', s.getvalue())
+    test.eq('<a do_include="0" key="value">data</a>', s.getvalue())
 
 
 @test
