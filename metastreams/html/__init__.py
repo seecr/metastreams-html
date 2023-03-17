@@ -38,3 +38,4 @@ usr_share_path = (my_dir.parent.parent.parent / 'usr-share').as_posix()    #DO_N
 
 from .server import *
 from .passwordfile2 import *
+from ._tag import *
