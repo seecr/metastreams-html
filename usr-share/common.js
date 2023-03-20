@@ -90,27 +90,40 @@ function enable_tab_key(textarea) {
 //
 // Call a Python function in a .sf, marked with callpy.jscallable.
 //
-function call_py(funcname, kwargs) {
+function call_py(funcname, kwargs = {}) {
     kwargs['call_py']=funcname;
-    return $.get("", $.param(kwargs));
+    return $.get("", $.param(kwargs)).fail(function(m) {
+        console.log("ERROR", m);
+    });
 }
 
 
 /*
  * Support for calling Javascript from Python and v.v.
  */
-function _call_js_all() {
+function call_js_all(element, self) {
     /*
      * Python can call Javascript with:
      *      with tag('div', **call_js('a_js_function', arg1=42)):
      *
      * => The function 'a_js_function' is executed on document.ready.
      */
-    var self = {};
-    $('*[call_js]').each(function(i) {
+    if (element == undefined)
+        root = $('*')
+    else
+        root = $(element);
+
+    if (self == undefined)
+        self = {};
+
+    root.find("*[call_js]").each(function(i) {
         var kwargs = $(this).data();
         var funcname = this.getAttribute('call_js');
-        window[funcname](this, self, kwargs);   // TODO convert values to bool, int etc
+        var fn = window[funcname];
+        if (fn == undefined)
+            console.error("call_js: no such function:", funcname);
+        else
+            fn(this, self, kwargs);   // TODO convert values to bool, int etc
     });
 }
 
@@ -120,7 +133,7 @@ $(document).ready(function () {
     $(document).ajaxStart(function () { $("html").addClass("wait"); });
 
     // execute all Python initialted call_js functions
-    _call_js_all();
+    call_js_all();
 
     // stop the wait mouse cursor
     $(document).ajaxStop(function () { $("html").removeClass("wait"); });
