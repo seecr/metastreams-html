@@ -23,6 +23,17 @@
  *
  * end license */
 
+
+/*
+ * autotest like tester
+ * sadly, most browser still do not support @decorator syntax
+ */
+function test(fn) {
+    console.log('TEST: ' + fn.name);
+    fn();
+}
+
+
 function common_prep_form(form) {
     var _exclamation = $("#"+form.data('exclamation'));
 
@@ -76,7 +87,41 @@ function enable_tab_key(textarea) {
 }
 
 
+//
+// Call a Python function in a .sf, marked with callpy.jscallable.
+//
+function call_py(funcname, kwargs) {
+    kwargs['call_py']=funcname;
+    return $.get("", $.param(kwargs));
+}
+
+
+/*
+ * Support for calling Javascript from Python and v.v.
+ */
+function _call_js_all() {
+    /*
+     * Python can call Javascript with:
+     *      with tag('div', **call_js('a_js_function', arg1=42)):
+     *
+     * => The function 'a_js_function' is executed on document.ready.
+     */
+    var self = {};
+    $('*[call_js]').each(function(i) {
+        var kwargs = $(this).data();
+        var funcname = this.getAttribute('call_js');
+        window[funcname](this, self, kwargs);   // TODO convert values to bool, int etc
+    });
+}
+
+
 $(document).ready(function () {
+    // show a wait mouse cursor during load
     $(document).ajaxStart(function () { $("html").addClass("wait"); });
+
+    // execute all Python initialted call_js functions
+    _call_js_all();
+
+    // stop the wait mouse cursor
     $(document).ajaxStop(function () { $("html").removeClass("wait"); });
 });
