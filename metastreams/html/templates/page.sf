@@ -127,9 +127,9 @@ def card(tag, content, title=None, **kwargs):
 
 @tagable
 def card2(tag, title=None):
-    with tag("div.card"):
+    with tag("div.card.m-3"):
         if title is not None:
-            with tag("div.card-header.fw-bold"):
+            with tag("div.card-header"):
                 yield title
         with tag("div.card-body"):
             yield

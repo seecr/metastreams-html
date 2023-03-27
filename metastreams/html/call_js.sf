@@ -1,4 +1,7 @@
 from functools import wraps
+import inspect
+
+from .utils import Dict
 
 
 __all__ =['CallPy', 'call_js']
@@ -22,21 +25,36 @@ class CallPy:
 
     def main(self, main_fn):
         @wraps(main_fn)
-        def wrap_main(tag, *req_args, context, request, **req_kwargs):
+        #response = mod.main(tag=tag, request=request, response=response, context=self._context, session=session)
+        def wrap_main(tag, request, response, context, session):
             query = request.query
             if 'call_py' in query:
                 funcname = request.query['call_py']
                 function = self.functions[funcname]
                 fn_kwargs = {k:js2py(v) for k,v in query.items() if k != 'call_py'}
+                # allows a function to return Python kwargs to the caller via the Headers
+                def returns(**kw):
+                    for key, value in kw.items():
+                        response.headers[f'Py-Arg-{key}'] = str(value)
+
+                # new API, only for calls from JS for now. Use http bundle to organize args.
+                if 'http' in function.__signature__.parameters:
+                    http = Dict(request = request,
+                                response = response,
+                                context = context,
+                                session = session,
+                                returns = returns)
+                    return function(tag, http, **fn_kwargs)  # NEW signature
                 return function(tag, context, **fn_kwargs)
             else:
-                return main_fn(tag, *req_args, context=context, request=request, **req_kwargs)
+                return main_fn(tag, request=request, response=response, context=context, session=session)
         return wrap_main
 
     def jscallable(self, f):
+        sig = inspect.signature(f)
+        f.__signature__ = sig # cache, see CPython code
         self.functions[f.__name__] = f
         return f
-
 
 def call_js(funcname, **kwargs):
     """ use this as follows:

@@ -135,11 +135,22 @@ class DynamicHtml:
                 yield tag.escape(value)
 
         try:
-            generator = mod.main(tag=tag, request=request, response=response, context=self._context, session=session)
-            async for value in compose(generator):
-                yield value
-            for line in tag.lines():
-                yield line
+            response = mod.main(tag=tag, request=request, response=response, context=self._context, session=session)
+            # response might be different things, depending on if 'async' or 'yield' is used in the code, or not
+            if inspect.isasyncgen(response) or inspect.isgenerator(response):  #TODO test
+                async for value in compose(response):
+                    yield value
+                for line in tag.lines():
+                    yield line
+            elif inspect.iscoroutine(response):                                #TODO test
+                yield await response
+            else:                                                              #TODO test
+                yield response
+            """ Suppose one writes this (hihi):
+                def main(tag, ...):
+                    with tag('div'):                <= show up in 'tag.lines()'
+                        return "Hello World!"       <= becomes 'response'
+            """
 
         except HTTPException:
             raise

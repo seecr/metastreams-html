@@ -90,10 +90,22 @@ function enable_tab_key(textarea) {
 //
 // Call a Python function in a .sf, marked with callpy.jscallable.
 //
-function call_py(funcname, kwargs = {}) {
+function call_py(funcname, kwargs = {}, done) {
     kwargs['call_py']=funcname;
-    return $.get("", $.param(kwargs)).fail(function(m) {
-        console.log("ERROR", m);
+    const response = $.get("", kwargs);
+    response.done(data => {
+        // I did not find a Headers parser. This one support only one value per key,
+        // but that is enough for Python arguments.
+        let kwargs = Object.fromEntries(
+                response.getAllResponseHeaders()
+                .split("\r\n")
+                .map(line => line.split(": "))
+                .filter(([key, value]) => key.startsWith('py-arg-'))
+                .map(([key, value]) => [key.substring(7,99), parseFloat(value)]));
+        done(data, kwargs);
+    })
+    .fail(function(m) {
+        console.log("ERROR calling", funcname, '(', kwargs, '):', m);
     });
 }
 
@@ -104,9 +116,9 @@ function call_py(funcname, kwargs = {}) {
 function call_js_all(element, self) {
     /*
      * Python can call Javascript with:
-     *      with tag('div', **call_js('a_js_function', arg1=42)):
+     *      with tag('div', **call_js('a_module.a_js_function', arg1=42)):
      *
-     * => The function 'a_js_function' is executed on document.ready.
+     * => The function 'a_js_function' from module 'a_module' is executed on document.ready.
      */
     if (element == undefined)
         root = $('*')
@@ -119,11 +131,22 @@ function call_js_all(element, self) {
     root.find("*[call_js]").each(function(i) {
         var kwargs = $(this).data();
         var funcname = this.getAttribute('call_js');
-        var fn = window[funcname];
-        if (fn == undefined)
-            console.error("call_js: no such function:", funcname);
-        else
-            fn(this, self, kwargs);   // TODO convert values to bool, int etc
+        var parts = funcname.split('.');
+        if (parts.length > 1) {
+            import('/static/'+parts[0]+'.js').then((m) => {
+                var fn = m[parts[1]];
+                if (fn == undefined)
+                    console.error("call_js: no such function:", funcname);
+                else
+                    fn(this, self, kwargs);
+               });
+        } else {
+            var fn = window[funcname];
+            if (fn == undefined)
+                console.error("call_js: no such function:", funcname);
+            else
+                fn(this, self, kwargs);
+        }
     });
 }
 
