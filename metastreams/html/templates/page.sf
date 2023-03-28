@@ -92,7 +92,8 @@ def render(tag, homeUrl="/", top_bar=True, stylesheets=None, javascripts=None, *
                                                 with tag("hr.dropdown-divider"): pass
                                             with tag("li"):
                                                 with tag("a.dropdown-item", href='/logout'): yield "Logout"
-            yield
+            with tag("div.d-flex.flex-column.gap-2.p-3"):
+                yield
         with tag("script",
             src="https://code.jquery.com/jquery-3.6.0.min.js",
             integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4=",
@@ -127,7 +128,7 @@ def card(tag, content, title=None, **kwargs):
 
 @tagable
 def card2(tag, title=None):
-    with tag("div.card.m-3"):
+    with tag("div.card"):
         if title is not None:
             with tag("div.card-header"):
                 yield title
@@ -135,6 +136,7 @@ def card2(tag, title=None):
             yield
 
 
+# see modal stuff in page.js
 def modal(tag, id_, title="", size="", save_button=False, close_button=True):
     with tag("div.modal", id_=id_, tabindex=-1, **{'aria-hidden': 'true'}):
         with tag("div.modal-dialog", class_=[f'modal-{size}'] if size in ["sm", "lg", "xl"] else []):
