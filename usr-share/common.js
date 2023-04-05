@@ -24,16 +24,6 @@
  * end license */
 
 
-/*
- * autotest like tester
- * sadly, most browser still do not support @decorator syntax
- */
-function test(fn) {
-    console.log('TEST: ' + fn.name);
-    fn();
-}
-
-
 function common_prep_form(form) {
     var _exclamation = $("#"+form.data('exclamation'));
 

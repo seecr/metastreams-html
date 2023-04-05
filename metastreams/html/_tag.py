@@ -155,6 +155,30 @@ class TagFactory(object):
     def compose(self, f):
         return partial(tag_compose(f, __bw_compat__=True), self)
 
+    def __getattr__(factory, name):
+        class ClassCollector:
+            def __init__(self, tagname):
+                self.tag = None
+                self.tagname = tagname
+            def __getattr__(self, clzname):
+                return self[clzname]
+            def __getitem__(self, clzname):
+                self.tagname += '.' + clzname
+                return self
+            def __call__(self, *a, **kw):
+                if a and isinstance(a[0], str):
+                    self.tagname += '.' + a[0]
+                    a = a[1:]
+                self.tag = factory(self.tagname, *a, **kw)
+                return self
+            def __enter__(self):
+                if not self.tag:
+                    self.tag = factory(self.tagname)
+                return self.tag.__enter__()
+            def __exit__(self, *a, **kw):
+                return self.tag.__exit__(*a, **kw)
+        return ClassCollector(name)
+
 def tag_compose(f, __bw_compat__=False):
     @contextmanager
     @compose
@@ -456,3 +480,26 @@ def test_dot_turns_into_classes():
         with tag('div#identifier.w100.ph3', class_=['other']):
             yield 42
     test.eq('<div class="other w100 ph3" id="identifier">42</div>', as_template(main))
+
+@test
+def dot_notation():
+    def main(tag):
+        with tag.aap:
+            yield 'noot'
+    test.eq("<aap>noot</aap>", as_template(main))
+    def main(tag):
+        with tag.aap.classA:
+            yield 'noot'
+    test.eq("""<aap class="classA">noot</aap>""", as_template(main))
+    def main(tag):
+        with tag.aap['clz-3']:
+            yield 'noot'
+    test.eq("""<aap class="clz-3">noot</aap>""", as_template(main))
+    def main(tag):
+        with tag.aap.classA(attr=99):
+            yield 'noot'
+    test.eq("""<aap attr="99" class="classA">noot</aap>""", as_template(main))
+    def main(tag):
+        with tag.aap.classA('classB.class-c', attr=42):
+            yield 'noot'
+    test.eq("""<aap attr="42" class="classA classB class-c">noot</aap>""", as_template(main))
