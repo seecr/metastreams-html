@@ -8,7 +8,13 @@
 export function get_tester(name) {
     let test = function(test_fn) {
         console.log('TEST:'+name+':'+test_fn.name);
-        test_fn();
+        let saved_html = $('html').clone(true);
+        $('html').empty();
+        try {
+            test_fn();
+        } finally {
+            saved_html.replaceAll('html');
+        }
     };
 
     test.eq = function eq(lhs, rhs) {

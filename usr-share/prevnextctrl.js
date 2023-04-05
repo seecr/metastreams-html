@@ -11,16 +11,26 @@ export function setup_control({start_id, left_id, right_id, end_id, offset_id, t
 
     let offset = 0;
     let maxitems = 9999;
+    let estart  = $('#' + start_id);
+    let eleft   = $('#' + left_id);
+    let eright  = $('#' + right_id);
+    let eend    = $('#' + end_id);
+    let eoffset = $('#' + offset_id);
+    let etotal  = $('#' + total_id);
+    console.assert(estart.prop('tagName') == 'BUTTON');
+    console.assert(eleft.prop('tagName') == 'BUTTON');
+    console.assert(eright.prop('tagName') == 'BUTTON');
+    console.assert(eend.prop('tagName') == 'BUTTON');
 
     function set_button_status(o, m) {
         offset = Math.max(o, 0);
         maxitems = m;
-        $('#' + start_id ).prop('disabled', offset <= 0);
-        $('#' + left_id  ).prop('disabled', offset <= 0);
-        $('#' + right_id ).prop('disabled', offset + count >= maxitems);
-        $('#' + end_id   ).prop('disabled', offset + count >= maxitems);
-        $('#' + offset_id).text(offset);
-        $('#' + total_id ).text(maxitems);
+        estart .prop('disabled', offset <= 0);
+        eleft  .prop('disabled', offset <= 0);
+        eright .prop('disabled', offset + count >= maxitems);
+        eend   .prop('disabled', offset + count >= maxitems);
+        eoffset.text(offset);
+        etotal .text(maxitems);
     }
 
     function _on_click_do(id, update_offset) {
@@ -60,12 +70,12 @@ test(function set_on_click() {
 
 
 test(function create_control() {
-    let start  = $('<div>', {id: 's_id'});
-    let left   = $('<div>', {id: 'l_id'});
-    let right  = $('<div>', {id: 'r_id'});
-    let end    = $('<div>', {id: 'e_id'});
-    let offset = $('<div>', {id: 'o_id'});
-    let total  = $('<div>', {id: 't_id'});
+    let start  = $('<button>', {id: 's_id'});
+    let left   = $('<button>', {id: 'l_id'});
+    let right  = $('<button>', {id: 'r_id'});
+    let end    = $('<button>', {id: 'e_id'});
+    let offset = $('<button>', {id: 'o_id'});
+    let total  = $('<button>', {id: 't_id'});
     $('html').append(start, left, right, end, offset, total);
 
     let results = [];
@@ -118,5 +128,21 @@ test(function create_control() {
     test.eq('0', offset.text());
     test.eq('9', total.text());
     check_disabled(true, true, false, false);
+});
+
+
+test(function accept_only_buttons() {
+    let start  = $('<button>', {id: 's_id'});
+    let left   = $('<button>', {id: 'l_id'});
+    let right  = $('<button>', {id: 'r_id'});
+    let end    = $('<button>', {id: 'e_id'});
+    let offset = $('<button>', {id: 'o_id'});
+    let total  = $('<button>', {id: 't_id'});
+    $('html').append(start, left, right, end, offset, total);
+
+    let set_status = setup_control(
+        {start_id: 's_id', left_id: 'l_id', right_id: 'r_id',
+         end_id: 'e_id', offset_id: 'o_id', total_id: 't_id', count: 2},
+        (offset, count) => []);
 });
 
