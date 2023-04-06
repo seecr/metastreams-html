@@ -24,6 +24,26 @@
  * end license */
 
 
+import {get_tester} from "./autotest.js"
+let test = get_tester("query2");
+
+
+export function form_data(form) {
+    return form.serializeArray().reduce((a, {name, value}) => {a[name] = value; return a;}, {});
+}
+
+
+test(function form_data_as_key_values() {
+    $('html').append(
+        $('<form>').append(
+            $('<input name="one" value="11">'),
+            $('<input name="two" value="22">'),
+        )
+    );
+    test.eq({one: '11', two: '22'}, form_data($('form')));
+});
+
+
 function common_prep_form(form) {
     var _exclamation = $("#"+form.data('exclamation'));
 
@@ -80,9 +100,10 @@ function enable_tab_key(textarea) {
 //
 // Call a Python function in a .sf, marked with callpy.jscallable.
 //
-function call_py(funcname, kwargs = {}, done) {
+export function call_py(funcname, kwargs = {}, done) {
     kwargs['call_py']=funcname;
-    const response = $.get("", kwargs);
+    let url = new URL(location);
+    const response = $.get(url.origin + url.pathname, kwargs);
     response.done(data => {
         // I did not find a Headers parser. This one support only one value per key,
         // but that is enough for Python arguments.
@@ -95,7 +116,7 @@ function call_py(funcname, kwargs = {}, done) {
         done(data, kwargs);
     })
     .fail(function(m) {
-        console.log("ERROR calling", funcname, '(', kwargs, '):', m);
+        console.error("ERROR calling", funcname, '(', kwargs, '):', m);
     });
 }
 
@@ -103,13 +124,14 @@ function call_py(funcname, kwargs = {}, done) {
 /*
  * Support for calling Javascript from Python and v.v.
  */
-function call_js_all(element, self) {
+export function call_js_all(element, self) {
     /*
      * Python can call Javascript with:
      *      with tag('div', **call_js('a_module.a_js_function', arg1=42)):
      *
      * => The function 'a_js_function' from module 'a_module' is executed on document.ready.
      */
+    let root;
     if (element == undefined)
         root = $('*')
     else
@@ -141,13 +163,3 @@ function call_js_all(element, self) {
 }
 
 
-$(document).ready(function () {
-    // show a wait mouse cursor during load
-    $(document).ajaxStart(function () { $("html").addClass("wait"); });
-
-    // execute all Python initialted call_js functions
-    call_js_all();
-
-    // stop the wait mouse cursor
-    $(document).ajaxStop(function () { $("html").removeClass("wait"); });
-});

@@ -37,7 +37,7 @@ def margins(tag, pt=2):
 
 @tagable
 def render(tag, homeUrl="/", top_bar=True, stylesheets=None, javascripts=None, **kwargs):
-    javascripts = ['common.js'] + (javascripts or [])
+    javascripts = ['main.js'] + (javascripts or [])
     stylesheets = ['common.css'] + (stylesheets or [])
 
     language = kwargs.get('language', 'nl')
@@ -107,7 +107,7 @@ def render(tag, homeUrl="/", top_bar=True, stylesheets=None, javascripts=None, *
         with tag("script", src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.6.0/highlight.min.js"): pass
 
         for each in javascripts:
-            with tag("script", src=each if (each[0] == '/' or each.startswith('http')) else f'/static/{each}'): pass
+            with tag("script", type="module", src=each if (each[0] == '/' or each.startswith('http')) else f'/static/{each}'): pass
 
 
 def card(tag, content, title=None, **kwargs):
