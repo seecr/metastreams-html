@@ -21,6 +21,7 @@ export function setup_control({start_id, left_id, right_id, end_id, offset_id, t
     console.assert(eleft.prop('tagName') == 'BUTTON');
     console.assert(eright.prop('tagName') == 'BUTTON');
     console.assert(eend.prop('tagName') == 'BUTTON');
+    console.assert(count > 0);
 
     function set_button_status(o, m) {
         offset = Math.max(o, 0);
@@ -51,15 +52,19 @@ export function setup_control({start_id, left_id, right_id, end_id, offset_id, t
 }
 
 
-export function on_click_do(element_id, fn) {
-    $('#' + element_id).unbind('click').click(e => {
+export function on_click_do(element, fn) {
+    if (element instanceof Element)
+        element = $(element);
+    else
+        element = $('#' + element);
+    element.unbind('click').click(e => {
         e.preventDefault();
         fn();
     });
 }
 
 
-test(function set_on_click() {
+test(function set_on_click_with_id() {
     let element = $('<div>', {id: 'element_id'});
     $('html').append(element);
     let clicks = [];
@@ -67,6 +72,16 @@ test(function set_on_click() {
     element.click();
     test.eq(1, clicks[0]);
 });
+
+
+test(function set_on_click_element() {
+    let element = document.createElement('div');
+    let clicks = [];
+    on_click_do(element, () => clicks.push(1));
+    element.click();
+    test.eq(1, clicks[0]);
+});
+
 
 
 test(function create_control() {
