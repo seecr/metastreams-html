@@ -3,11 +3,16 @@
 import {get_tester} from "./autotest.js"
 let test = get_tester('prevnextctrl');
 
+import {validate} from "./aproba.js";
+
+
 /* create a HTML control with ids for start, left, right, end buttons and two locations to
  * show the offset and the total, then call this function (once!) using call_js
+ * then call set_button_status(offset, maxitems) as to update the control
  */
 
 export function setup_control({start_id, left_id, right_id, end_id, offset_id, total_id, count}, callback) {
+    validate("SSSSSSNF", [start_id, left_id, right_id, end_id, offset_id, total_id, count, callback]);
 
     let offset = 0;
     let maxitems = 9999;
@@ -24,6 +29,7 @@ export function setup_control({start_id, left_id, right_id, end_id, offset_id, t
     console.assert(count > 0);
 
     function set_button_status(o, m) {
+        validate("NN", arguments);
         offset = Math.max(o, 0);
         maxitems = m;
         estart .prop('disabled', offset <= 0);
@@ -35,6 +41,7 @@ export function setup_control({start_id, left_id, right_id, end_id, offset_id, t
     }
 
     function _on_click_do(id, update_offset) {
+        validate("SF", arguments);
         on_click_do(id, () => {
             update_offset();
             set_button_status(offset, maxitems);
@@ -53,6 +60,7 @@ export function setup_control({start_id, left_id, right_id, end_id, offset_id, t
 
 
 export function on_click_do(element, fn) {
+    validate("OF|SF", arguments);
     if (element instanceof Element)
         element = $(element);
     else

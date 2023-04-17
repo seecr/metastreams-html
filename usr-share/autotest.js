@@ -8,12 +8,18 @@
 export function get_tester(name) {
     let test = function(test_fn) {
         console.log('TEST:'+name+':'+test_fn.name);
-        let saved_html = $('html').clone(true);
-        $('html').empty();
+        let html = $('html');
+        /*
+         * we make room for the test to manipulate the dom, and it is important
+         * to do that in such a way that jQuery data is also saved.
+         * detach() does that.
+         */
+        let save = html.children().detach();
         try {
             test_fn();
         } finally {
-            saved_html.replaceAll('html');
+            html.empty();        // remove test's crap
+            save.appendTo(html); // restore dom
         }
     };
 

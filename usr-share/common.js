@@ -27,6 +27,8 @@
 import {get_tester} from "./autotest.js"
 let test = get_tester("query2");
 
+import {validate} from "./aproba.js";
+
 
 export function form_data(form) {
     return form.serializeArray().reduce((a, {name, value}) => {a[name] = value; return a;}, {});
@@ -118,6 +120,15 @@ export function call_py(funcname, kwargs = {}, done) {
     .fail(function(m) {
         console.error("ERROR calling", funcname, '(', kwargs, '):', m);
     });
+}
+
+
+export function replace_content(node, data) {
+    /* replace data in html page, executing call_js functions */
+    validate("OS", arguments);
+    let n = $(node);
+    node.empty().append(data);
+    call_js_all(node);
 }
 
 
