@@ -46,7 +46,7 @@ test(function form_data_as_key_values() {
 });
 
 
-function common_prep_form(form) {
+export function common_prep_form(form) {
     var _exclamation = $("#"+form.data('exclamation'));
 
     form.find("textarea").keyup(function(e) {
@@ -65,7 +65,7 @@ function common_prep_form(form) {
     })
 }
 
-function common_reset_form(form) {
+export function common_reset_form(form) {
     form.find("textarea").removeClass("changes-pending")
 
     var _exclamation = $("#"+form.data('exclamation'));
@@ -82,7 +82,7 @@ function common_reset_form(form) {
 
 }
 
-function enable_tab_key(textarea) {
+export function enable_tab_key(textarea) {
     textarea.on("keydown", function(e) {
         if (e.key == 'Tab') {
             e.preventDefault();
