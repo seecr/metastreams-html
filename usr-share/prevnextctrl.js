@@ -1,9 +1,10 @@
 
 
+import {call_py, replace_content} from "./common.js"
 import {get_tester} from "./autotest.js"
-let test = get_tester('prevnextctrl');
-
 import {validate} from "./aproba.js";
+
+let test = get_tester('prevnextctrl');
 
 
 /* create a HTML control with ids for start, left, right, end buttons and two locations to
@@ -56,6 +57,26 @@ export function setup_control({start_id, left_id, right_id, end_id, offset_id, t
 
     set_button_status(offset, maxitems);
     return set_button_status;
+}
+
+
+export function generic_init(_, self, {
+            count, offset_id, start_id, left_id, right_id, end_id, total_id,
+            results_ph, py_fn_name, ...py_fn_piggies}) {
+    validate("NSSSSSSSSO", [
+        count, offset_id, start_id, left_id, right_id, end_id, total_id,
+        results_ph, py_fn_name, py_fn_piggies]);
+    let results_elm = $('#' + results_ph);
+    function get_data_and_update(offset) {
+        call_py(py_fn_name, {offset, count, ...py_fn_piggies},
+            (data, {maxitems}) => {
+                replace_content(results_elm, data);
+                update_buttons(offset, maxitems);
+            });
+    }
+    let update_buttons = setup_control(
+        {count, offset_id, start_id, left_id, right_id, end_id, total_id}, get_data_and_update);
+    get_data_and_update(0);
 }
 
 
