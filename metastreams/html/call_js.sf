@@ -2,6 +2,7 @@ from functools import wraps
 import inspect
 
 from .utils import Dict
+import json
 
 
 __all__ =['CallPy', 'call_js']
@@ -29,9 +30,9 @@ class CallPy:
         def wrap_main(tag, request, response, context, session):
             query = request.query
             if 'call_py' in query:
-                funcname = request.query['call_py']
+                funcname = query['call_py']
                 function = self.functions[funcname]
-                fn_kwargs = {k:js2py(v) for k,v in query.items() if k != 'call_py'}
+                fn_kwargs = json.loads(query['data'])
                 # allows a function to return Python kwargs to the caller via the Headers
                 def returns(**kw):
                     for key, value in kw.items():
@@ -67,20 +68,4 @@ def py2js(v):
     if isinstance(v, bool):
         return str(v).lower()
     return v
-
-
-def js2py(v):
-    try:
-        return int(v)
-    except ValueError:
-        try:
-            return float(v)
-        except ValueError:
-            if v == 'true':
-                return True
-            if v == 'false':
-                return False
-            return v
-
-
 

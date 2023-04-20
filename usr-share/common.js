@@ -103,9 +103,9 @@ export function enable_tab_key(textarea) {
 // Call a Python function in a .sf, marked with callpy.jscallable.
 //
 export function call_py(funcname, kwargs = {}, done, http_get=$.get) {
-    kwargs['call_py'] = funcname;
+    let query = {call_py: funcname, data: JSON.stringify(kwargs)};
     let url = new URL(location);
-    const response = $.get(url.origin + url.pathname, kwargs);
+    const response = $.get(url.origin + url.pathname, query);
     response.done(data => {
         // I did not find a Headers parser. This one support only one value per key,
         // but that is enough for Python arguments.
