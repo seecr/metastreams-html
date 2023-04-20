@@ -102,8 +102,8 @@ export function enable_tab_key(textarea) {
 //
 // Call a Python function in a .sf, marked with callpy.jscallable.
 //
-export function call_py(funcname, kwargs = {}, done) {
-    kwargs['call_py']=funcname;
+export function call_py(funcname, kwargs = {}, done, http_get=$.get) {
+    kwargs['call_py'] = funcname;
     let url = new URL(location);
     const response = $.get(url.origin + url.pathname, kwargs);
     response.done(data => {
@@ -121,6 +121,17 @@ export function call_py(funcname, kwargs = {}, done) {
         console.error("ERROR calling", funcname, '(', kwargs, '):', m);
     });
 }
+
+/*
+test(function call_py_test() {
+    let answer = [];
+    let http_get = (...args) => {done: (fn) => fn(['body', {a: 10}]);};
+    call_py('my_py_func', {}, (body, kwargs) => {
+        answer[0] = [body, kwargs];
+    }, http_get = http_get);
+    test.eq("?", answer[0]);
+})
+*/
 
 
 export function replace_content(node, data) {
