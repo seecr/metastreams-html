@@ -40,7 +40,7 @@ async def validate(request, session, context, **kwargs):
 
     session['login-error-message'] = 'Incorrect username/password'
     return "/login"
- 
+
 def _get_user(password_file, username, password):
     if password_file.validateUser(username, password):
         data = password_file.resolve_user(username)

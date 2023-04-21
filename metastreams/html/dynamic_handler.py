@@ -175,7 +175,7 @@ async def test_post_request():
         def _mod_from_request(self, *args, **kwargs):
             return MockPackage()
 
-    handler = dynamic_handler(MockDynamicHtml(modules=[]))
+    handler = dynamic_handler(MockDynamicHtml(rootmodule=''))
     request = MockRequest(path="/index/page", method="POST")
     try:
         await handler(request)
@@ -193,7 +193,7 @@ async def test_post_request_dict_():
         def _mod_from_request(self, *args, **kwargs):
             return MockPackage()
 
-    handler = dynamic_handler(MockDynamicHtml(modules=[]))
+    handler = dynamic_handler(MockDynamicHtml(rootmodule=''))
     request = MockRequest(path="/index/page", method="POST")
 
     response = await handler(request)

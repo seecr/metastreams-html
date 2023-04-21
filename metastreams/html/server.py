@@ -25,6 +25,7 @@
 
 import sys
 import asyncio
+import pathlib
 from aiohttp import web as aiohttp_web
 from .dynamichtml import DynamicHtml, TemplateImporter
 
@@ -42,6 +43,7 @@ async def create_server_app(module_names, index, context=None, static_dirs=None,
 
     app = aiohttp_web.Application()
     routes = additional_routes or []
+    routes.append(aiohttp_web.static(static_path, pathlib.Path(__file__).parent.parent.parent/'usr-share'))
     if static_dirs is not None:
         routes.append(aiohttp_web.get(static_path + '/{tail:.+}', static_handler(static_dirs, static_path)))
     routes.append(aiohttp_web.route(
@@ -64,22 +66,24 @@ async def create_server(port, *args, **kwargs):
 import autotest
 test = autotest.get_tester(__name__)
 
+from .dynamichtml import guarded_path
+test.fixture(guarded_path)
 
 @test
-async def test_additional_routes(guard):
+async def test_additional_routes(guarded_path):
     keep_meta = sys.meta_path.copy()
     try:
-        app = await create_server_app([], "index")
-        test.eq(1, len(app.router.routes()))
+        app = await create_server_app('', "index")
+        test.eq(3, len(app.router.routes()))
 
-        app = await create_server_app([], "index", additional_routes=[aiohttp_web.route("get", "/test", lambda: None)])
-        test.eq(2, len(app.router.routes()))
+        app = await create_server_app('', "index", additional_routes=[aiohttp_web.route("get", "/test", lambda: None)])
+        test.eq(4, len(app.router.routes()))
 
-        app = await create_server_app([], "index", additional_routes=[
+        app = await create_server_app('', "index", additional_routes=[
             aiohttp_web.route("get", "/test", lambda: None),
             aiohttp_web.post("/test", lambda: None),
         ])
-        test.eq(3, len(app.router.routes()))
+        test.eq(5, len(app.router.routes()))
     finally:
         for p in sys.meta_path:
             if p not in keep_meta:

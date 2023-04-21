@@ -27,7 +27,8 @@ import inspect
 import warnings
 from urllib.parse import urlencode
 
-from .. import tagable
+from metastreams.html._tag import tagable
+
 
 @tagable
 def margins(tag, pt=2):

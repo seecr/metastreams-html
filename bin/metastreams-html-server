@@ -24,26 +24,35 @@
 #
 ## end license ##
 
-from metastreams.html.server import create_server
-from argparse import ArgumentParser
-import asyncio
-
-import logging
-logging.basicConfig(level=logging.DEBUG)
-
-async def main(port, modules, index, static_dir, static_path):
-    await create_server(port, modules.split(","), index, static_dir, static_path)
-    logging.info(f"Listening on port {port}")
-    while True:
-        await asyncio.sleep(1)
-
 if __name__ == '__main__':
+    """ ABout calling basicConfig:
+    1. we must call basicConfig before any imported module calls any log function, otherwise logging
+       will be implicitly initialized using defaults, and our basicConfig does nothing.
+    2. we must not call it on module level, otherwise any spawned/forked process will load this
+       module and initialize logging, which may be against their own configuration. This happens
+       in metastreams.core.spawn for example. Now the latter moduel has fck all to do with our module
+       here, but since it is in the same top-level package, it will be initialized when we import
+       anything from metastreams, even our own code.
+    """
+    import logging
+    logging.basicConfig(level=logging.INFO)
+
+    from argparse import ArgumentParser
     parser = ArgumentParser()
-    parser.add_argument('--modules', help='Data directory', required=True)
+    parser.add_argument('--rootmodule', help='Root module for resolving templates', default=None)
     parser.add_argument('--port', help='Portnumber', type=int, default=8080)
     parser.add_argument('--index', help='Page shown when / is specified', default="index")
     parser.add_argument('--static_path', help='path static files are served at.', default="/static")
     parser.add_argument('--static_dir', help='directory containing static files')
     args = parser.parse_args()
 
-    asyncio.run(main(args.port, args.modules, args.index, args.static_dir, args.static_path))
+    import asyncio
+    from metastreams.html.server import create_server
+
+    async def main():
+        await create_server(args.port, args.rootmodule, args.index, args.static_dir, args.static_path)
+        logging.info(f"Listening on port {args.port}")
+        while True:
+            await asyncio.sleep(1)
+
+    asyncio.run(main())
