@@ -47,7 +47,7 @@ import autotest
 test = autotest.get_tester(__name__)
 
 
-import metastreams.html.templates as stdlib
+import metastreams.html.stdsflib as stdlib
 from ._tag import TagFactory
 
 
