@@ -33,6 +33,7 @@ import os.path
 import tempfile
 import pathlib
 import inspect
+import traceback
 
 from importlib.util import spec_from_loader
 from importlib.machinery import SourceFileLoader
@@ -131,14 +132,28 @@ class DynamicHtml:
     async def render_page(self, mod, request, response, session=None):
         tag = TagFactory()
 
+        stack = []
+        def add_frame(f):
+            stack.append(
+                traceback.FrameSummary(
+                    f.f_code.co_filename,
+                    f.f_lineno,
+                    f.f_code.co_name))
+
+
         async def compose(value):
             if inspect.isasyncgen(value):
+                add_frame(value.ag_frame)
+
                 async for v in value:
                     for line in tag.lines():
                         yield line
                     async for each in compose(v):
                         yield each
+
             elif inspect.isgenerator(value):
+                add_frame(value.gi_frame)
+
                 for v in value:
                     for line in tag.lines():
                         yield line
@@ -149,10 +164,15 @@ class DynamicHtml:
 
         try:
             response = mod.main(tag=tag, request=request, response=response, context=self._context, session=session)
-            # response might be different things, depending on if 'async' or 'yield' is used in the code, or not
             if inspect.isasyncgen(response) or inspect.isgenerator(response):  #TODO test
-                async for value in compose(response):
-                    yield value
+                try:
+                    async for value in compose(response):
+                        yield value
+                except Exception as e:
+                    s = traceback.StackSummary.from_list(stack)
+                    for line in s.format():
+                        print(line)
+                    raise Exception from None
                 for line in tag.lines():
                     yield line
             else:
@@ -162,7 +182,7 @@ class DynamicHtml:
             raise
         except Exception as e:
             logger.exception('DynamicHtml -> render_page Exception:', exc_info=e)
-            raise HTTPInternalServerError(body=bytes(str(e), encoding="utf-8"))
+            raise HTTPInternalServerError(body=bytes(str(e), encoding="utf-8")) from None
 
 
     async def handle_post_request(self, request, session=None):
@@ -667,8 +687,49 @@ async def main(tag, **kwargs):
     test.eq('<number><something><another>another</another>something</something></number>', ''.join([i async for i in result]))
 
 
+@test
+async def show_decent_stack_trace(sfimporter, guarded_path):
+    """ Without doing anything, the exception below results in an incomprehensible
+    gibberish with a stack trace of DynamicHtml internals, but no reference to
+    'something()', 'another()' or 'main()'. Also the exception is chained, adding
+    even more to the incomprehensiblility
+    """
+    (dyn_dir := guarded_path / "pruts").mkdir(parents=True)
+    (dyn_dir / "pruebo.sf").write_text("""
+import asyncio
+
+async def something(tag):
+    with tag("something"):
+        yield another(tag)
+        await asyncio.sleep(0.01)
+        yield "something"
+
+def another(tag):
+    with tag("another"):
+        yield "another"
+    raise TypeError('aap')
+
+async def main(tag, **kwargs):
+    with tag("number"):
+        yield something(tag)
+        await asyncio.sleep(0.01)
+""")
+    d = DynamicHtml("pruts")
+    try:
+        with test.stdout as o:
+            async for _ in await d.handle_request(request=MockRequest(path="/pruebo"), response=None):
+                pass
+    except HTTPInternalServerError:
+        pass
+    err = o.getvalue()
+    test.contains(err, "async def main(tag, **kwargs)")
+    test.contains(err, "async def something(tag):")
+    test.contains(err, "def another(tag):")
+
+
+
 sys.path.remove(stdlib.__path__[0])
-del sys.modules['page']
+sys.modules.pop('page', None)
 
 
 # verify if stuff is cleaned up
