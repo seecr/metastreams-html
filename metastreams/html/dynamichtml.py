@@ -139,26 +139,30 @@ class DynamicHtml:
                     f.f_code.co_filename,
                     f.f_lineno,
                     f.f_code.co_name))
+        def pop_frame():
+            stack.pop()
 
 
         async def compose(value):
             if inspect.isasyncgen(value):
-                add_frame(value.ag_frame)
 
                 async for v in value:
+                    add_frame(value.ag_frame)
                     for line in tag.lines():
                         yield line
                     async for each in compose(v):
                         yield each
+                    pop_frame()
 
             elif inspect.isgenerator(value):
-                add_frame(value.gi_frame)
 
                 for v in value:
+                    add_frame(value.gi_frame)
                     for line in tag.lines():
                         yield line
                     async for each in compose(v):
                         yield each
+                    pop_frame()
             else:
                 yield tag.escape(value)
 
@@ -169,9 +173,14 @@ class DynamicHtml:
                     async for value in compose(response):
                         yield value
                 except Exception as e:
+                    tb = e.__traceback__
+                    while tb.tb_next:
+                        tb = tb.tb_next
+                    add_frame(tb.tb_frame) # add most specific frame
                     s = traceback.StackSummary.from_list(stack)
                     for line in s.format():
-                        print(line)
+                        print(line, file=sys.stderr, end='')
+                    traceback.print_exception(e, value=e, tb=None, limit=0, chain=False)
                     raise Exception from None
                 for line in tag.lines():
                     yield line
@@ -700,14 +709,18 @@ import asyncio
 
 async def something(tag):
     with tag("something"):
+        yield inbetween()
         yield another(tag)
         await asyncio.sleep(0.01)
         yield "something"
 
+async def inbetween():
+    yield
+
 def another(tag):
     with tag("another"):
         yield "another"
-    raise TypeError('aap')
+    1/0
 
 async def main(tag, **kwargs):
     with tag("number"):
@@ -716,16 +729,19 @@ async def main(tag, **kwargs):
 """)
     d = DynamicHtml("pruts")
     try:
-        with test.stdout as o:
+        with test.stderr as o:
             async for _ in await d.handle_request(request=MockRequest(path="/pruebo"), response=None):
                 pass
     except HTTPInternalServerError:
         pass
     err = o.getvalue()
-    test.contains(err, "async def main(tag, **kwargs)")
-    test.contains(err, "async def something(tag):")
-    test.contains(err, "def another(tag):")
-
+    print(err)
+    test.contains(err, "yield something(tag)")
+    test.contains(err, "yield another(tag)")
+    test.contains(err, "1/0")
+    test.contains(err, "ZeroDivisionError: division by zero")
+    test.comp.contains(err, "yield inbetween()")  # tests proper pop() async generator
+    test.comp.contains(err, 'yield "another"')  # tests proper pop() sync generator
 
 
 sys.path.remove(stdlib.__path__[0])
