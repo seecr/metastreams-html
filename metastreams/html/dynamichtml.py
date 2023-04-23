@@ -705,27 +705,20 @@ async def show_decent_stack_trace(sfimporter, guarded_path):
     """
     (dyn_dir := guarded_path / "pruts").mkdir(parents=True)
     (dyn_dir / "pruebo.sf").write_text("""
-import asyncio
-
 async def something(tag):
     with tag("something"):
         yield inbetween()
         yield another(tag)
-        await asyncio.sleep(0.01)
-        yield "something"
 
 async def inbetween():
     yield
 
 def another(tag):
-    with tag("another"):
-        yield "another"
+    yield "another"
     1/0
 
 async def main(tag, **kwargs):
-    with tag("number"):
-        yield something(tag)
-        await asyncio.sleep(0.01)
+    yield something(tag)
 """)
     d = DynamicHtml("pruts")
     try:
@@ -735,7 +728,6 @@ async def main(tag, **kwargs):
     except HTTPInternalServerError:
         pass
     err = o.getvalue()
-    print(err)
     test.contains(err, "yield something(tag)")
     test.contains(err, "yield another(tag)")
     test.contains(err, "1/0")
