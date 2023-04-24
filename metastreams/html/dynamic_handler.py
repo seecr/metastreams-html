@@ -26,6 +26,7 @@
 from metastreams.html import SessionStore, DynamicHtml, Cookie
 
 from aiohttp import web as aiohttp_web
+from aiohttp.web import HTTPInternalServerError
 import traceback
 import json
 
@@ -80,12 +81,8 @@ def dynamic_handler(dHtml, enable_sessions=True, session_cookie_name="METASTREAM
             except aiohttp_web.HTTPException:
                 raise
             except Exception as e:
-                errorMsg = b"<pre class='alert alert-dark text-decoration-none fs-6 font-monospace'>"
-                errorMsg += as_bytes(str(e)) + b"<br/>"
-                errorMsg += as_bytes(traceback.format_exc()) + b"</pre>"
-
-                await prepare(request, response, cookie, session)
-                await response.write(errorMsg)
+                traceback.print_exc(chain=False)
+                raise HTTPInternalServerError(text=str(e))
         await response.write_eof()
         return response
 
@@ -154,15 +151,19 @@ class test_rendering:
         test.eq(b"MakeItBytes: 42, {'key': 'value'}, ('tuple',)", request._payload_writer.content)
 
 @test
-async def test_error_message_rendering():
+async def test_error_message_rendering(stderr):
     class MockDynamicHtml:
         def handle_request(self, *args, **kwargs):
             1/0
     handler = dynamic_handler(MockDynamicHtml())
     request = MockRequest(path="/")
-    response = await handler(request)
-    test.truth(request._payload_writer.content.startswith(b"<pre class=\'alert alert-dark text-decoration-none fs-6 font-monospace\'>division by zero<br/>Traceback (most recent call last):\n"))
-    test.truth(request._payload_writer.content.endswith(b"\nZeroDivisionError: division by zero\n</pre>"))
+    try:
+        await handler(request)
+    except HTTPInternalServerError as e:
+        test.eq(e.text, "division by zero")
+        log = stderr.getvalue()
+        test.startswith(log, "Traceback (most recent call last)")
+        test.endswith(log, "ZeroDivisionError: division by zero\n")
 
 
 @test

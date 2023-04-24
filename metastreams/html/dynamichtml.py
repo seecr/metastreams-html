@@ -25,13 +25,10 @@
 
 import asyncio
 import aionotify
-from aiohttp.web import HTTPException, HTTPFound, HTTPNotFound, HTTPInternalServerError
+from aiohttp.web import HTTPNotFound
 from pathlib import Path
-from urllib.parse import urlencode
 import sys
 import os.path
-import tempfile
-import pathlib
 import inspect
 import traceback
 
@@ -156,36 +153,27 @@ class DynamicHtml:
             else:
                 yield tag.escape(value)
 
-        try:
-            response = mod.main(tag=tag, request=request, response=response, context=self._context, session=session)
-            if inspect.isasyncgen(response) or inspect.isgenerator(response):  #TODO test
-                try:
-                    async for value in compose(response):
-                        yield value
-                except Exception as e:
-                    stack.append(traceback.extract_tb(e.__traceback__)[-1]) # add last call site
-                    msg = ["Traceback (most recent call last):\n"]
-                    msg += traceback.StackSummary.from_list(stack).format()
-                    msg += traceback.format_exception_only(type(e), e)
-                    for line in msg:
-                        print(line, file=sys.stderr, end='')
-                    raise RuntimeError(f"{e}, see traceback above") from None
-                for line in tag.lines():
-                    yield line
-            else:
-                raise TypeError(f"{mod.main.__qualname__} must be an (async) generator.");
-
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.exception('DynamicHtml -> render_page Exception:', exc_info=e)
-            raise HTTPInternalServerError(body=bytes(str(e), encoding="utf-8")) from None
+        response = mod.main(tag=tag, request=request, response=response, context=self._context, session=session)
+        if inspect.isasyncgen(response) or inspect.isgenerator(response):  #TODO test
+            try:
+                async for value in compose(response):
+                    yield value
+            except Exception as e:
+                stack.append(traceback.extract_tb(e.__traceback__)[-1]) # add last call site
+                msg = ["Generators Traceback (most recent call last):\n"]
+                msg += traceback.StackSummary.from_list(stack).format()
+                msg += traceback.format_exception_only(type(e), e)
+                for line in msg:
+                    print(line, file=sys.stderr, end='')
+                raise RuntimeError(f"{e}, see generators traceback above") from None
+            for line in tag.lines():
+                yield line
+        else:
+            raise TypeError(f"{mod.main.__qualname__} must be an (async) generator.");
 
 
     async def handle_post_request(self, request, session=None):
-        if (mod := self._mod_from_request(request)) is None:
-            raise HTTPNotFound()
-
+        mod = self._mod_from_request(request)
         _, method_name = split_path(request.path)
         if method_name is None:
             raise HTTPNotFound()
@@ -201,9 +189,7 @@ class DynamicHtml:
 
 
     async def handle_request(self, request, response, session=None):
-        if (mod := self._mod_from_request(request)) is None:
-            raise HTTPNotFound(text=request.path)
-
+        mod = self._mod_from_request(request)
         return self.render_page(mod, request, response, session=session)
 
 
@@ -222,10 +208,9 @@ class DynamicHtml:
             try:
                 return importlib.import_module(fullname)
             except ModuleNotFoundError as e:
-                raise HTTPNotFound(reason=fullname)
-        except Exception as e:
-            logger.exception(f"Exception while loading {fullname}:", exc_info=e)
-            raise HTTPInternalServerError()
+                if repr(fullname) in str(e):
+                    raise HTTPNotFound(reason=fullname) from None
+                raise e from None
 
 
 def split_path(path):
@@ -500,16 +485,13 @@ def main(**k):
     yield 11
 """)
     d = DynamicHtml("pruts61")
-    with test.stderr as err:
-        try:
-            result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
-            list(i async for i in result)
-            test.fail()
-        except Exception as e:
-            test.truth(isinstance(e, HTTPInternalServerError))
-    err_log = err.getvalue()
-    test.contains(err_log, 'Exception while loading pruts61.pruebo:')
-    test.contains(err_log, 'ZeroDivisionError: division by zero')
+    try:
+        result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
+        list(i async for i in result)
+        test.fail()
+    except Exception as e:
+        test.isinstance(e, ZeroDivisionError)
+    # actual logging and error response is handled upstream
 
 
 @test
@@ -714,7 +696,7 @@ async def main(tag, **kwargs):
         with test.stderr as o:
             async for r in await d.handle_request(request=MockRequest(path="/pruebo"), response=None):
                 result.append(r)
-    except HTTPInternalServerError:
+    except RuntimeError:
         pass
     test.eq(['<something>', 'in between', 'another'], result)
     err = o.getvalue()
@@ -726,8 +708,7 @@ async def main(tag, **kwargs):
     test.contains(err[4], "yield another(tag)")
     test.contains(err[6], "1/0")
     test.contains(err[7], "ZeroDivisionError: division by zero")
-    test.contains(err[-1], "RuntimeError: division by zero, see traceback above")
-    test.eq(13, len(err)) # remaning lines are from HTTP error
+    test.eq(8, len(err))
 
 
 sys.path.remove(stdlib.__path__[0])
