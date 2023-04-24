@@ -131,38 +131,28 @@ class DynamicHtml:
 
     async def render_page(self, mod, request, response, session=None):
         tag = TagFactory()
-
         stack = []
-        def add_frame(f):
-            stack.append(
-                traceback.FrameSummary(
-                    f.f_code.co_filename,
-                    f.f_lineno,
-                    f.f_code.co_name))
-        def pop_frame():
-            stack.pop()
-
 
         async def compose(value):
             if inspect.isasyncgen(value):
 
                 async for v in value:
-                    add_frame(value.ag_frame)
+                    stack.extend(traceback.extract_stack(value.ag_frame)) # add current position of generator
                     for line in tag.lines():
                         yield line
                     async for each in compose(v):
                         yield each
-                    pop_frame()
+                    stack.pop()
 
             elif inspect.isgenerator(value):
 
                 for v in value:
-                    add_frame(value.gi_frame)
+                    stack.extend(traceback.extract_stack(value.gi_frame)) # add current position of generator
                     for line in tag.lines():
                         yield line
                     async for each in compose(v):
                         yield each
-                    pop_frame()
+                    stack.pop()
             else:
                 yield tag.escape(value)
 
@@ -173,14 +163,12 @@ class DynamicHtml:
                     async for value in compose(response):
                         yield value
                 except Exception as e:
-                    tb = e.__traceback__
-                    while tb.tb_next:
-                        tb = tb.tb_next
-                    add_frame(tb.tb_frame) # add most specific frame
-                    s = traceback.StackSummary.from_list(stack)
-                    for line in s.format():
+                    stack.append(traceback.extract_tb(e.__traceback__)[-1]) # add last call site
+                    msg = ["Traceback (most recent call last):\n"]
+                    msg += traceback.StackSummary.from_list(stack).format()
+                    msg += traceback.format_exception_only(type(e), e)
+                    for line in msg:
                         print(line, file=sys.stderr, end='')
-                    traceback.print_exception(e, value=e, tb=None, limit=0, chain=False)
                     raise Exception from None
                 for line in tag.lines():
                     yield line
@@ -711,7 +699,7 @@ async def something(tag):
         yield another(tag)
 
 async def inbetween():
-    yield
+    yield "in between"
 
 def another(tag):
     yield "another"
@@ -721,19 +709,24 @@ async def main(tag, **kwargs):
     yield something(tag)
 """)
     d = DynamicHtml("pruts")
+    result = []
     try:
         with test.stderr as o:
-            async for _ in await d.handle_request(request=MockRequest(path="/pruebo"), response=None):
-                pass
+            async for r in await d.handle_request(request=MockRequest(path="/pruebo"), response=None):
+                result.append(r)
     except HTTPInternalServerError:
         pass
+    test.eq(['<something>', 'in between', 'another'], result)
     err = o.getvalue()
-    test.contains(err, "yield something(tag)")
-    test.contains(err, "yield another(tag)")
-    test.contains(err, "1/0")
-    test.contains(err, "ZeroDivisionError: division by zero")
     test.comp.contains(err, "yield inbetween()")  # tests proper pop() async generator
     test.comp.contains(err, 'yield "another"')  # tests proper pop() sync generator
+    err = err.splitlines()
+    test.contains(err[0], "Traceback (most recent call last):")
+    test.contains(err[2], "yield something(tag)")
+    test.contains(err[4], "yield another(tag)")
+    test.contains(err[6], "1/0")
+    test.contains(err[7], "ZeroDivisionError: division by zero")
+    test.eq(13, len(err)) # remaning lines are from HTTP error
 
 
 sys.path.remove(stdlib.__path__[0])
