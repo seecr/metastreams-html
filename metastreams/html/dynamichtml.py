@@ -169,7 +169,7 @@ class DynamicHtml:
                     msg += traceback.format_exception_only(type(e), e)
                     for line in msg:
                         print(line, file=sys.stderr, end='')
-                    raise Exception from None
+                    raise RuntimeError(f"{e}, see traceback above") from None
                 for line in tag.lines():
                     yield line
             else:
@@ -726,6 +726,7 @@ async def main(tag, **kwargs):
     test.contains(err[4], "yield another(tag)")
     test.contains(err[6], "1/0")
     test.contains(err[7], "ZeroDivisionError: division by zero")
+    test.contains(err[-1], "RuntimeError: division by zero, see traceback above")
     test.eq(13, len(err)) # remaning lines are from HTTP error
 
 
