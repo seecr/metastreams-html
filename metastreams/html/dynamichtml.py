@@ -24,19 +24,13 @@
 ## end license ##
 
 import asyncio
-import aionotify
-from aiohttp.web import HTTPNotFound
-from pathlib import Path
 import sys
-import os.path
 import inspect
 import traceback
-
-from importlib.util import spec_from_loader
-from importlib.machinery import SourceFileLoader
 import importlib
 
-from .utils import Dict
+from aiohttp.web import HTTPNotFound
+from pathlib import Path
 
 import logging
 logger = logging.getLogger(__name__)
@@ -45,75 +39,10 @@ import autotest
 test = autotest.get_tester(__name__)
 
 
-#import metastreams.html.stdsflib as stdlib
+from .utils import Dict
 from ._tag import TagFactory
-
-
-class TemplateImporter:
-
-    @staticmethod
-    async def install():
-        if im := next((im for im in sys.meta_path if isinstance(im, TemplateImporter)), None):
-            logging.info(f"Watcher: found old TemplateImporter, removing it: {im}.")
-            sys.meta_path.remove(im)
-            im.task.cancel()
-        #stdlib_path = stdlib.__path__[0]
-        #if stdlib_path in sys.path:
-        #    logging.info(f"Importer: stdlib path {stdlib_path!r} already on sys.path.")
-        #else:
-        #    sys.path.insert(0, stdlib.__path__[0])
-        im = TemplateImporter()
-        sys.meta_path.append(im)
-        im.run(asyncio.get_running_loop())
-        await asyncio.sleep(0) # yield task to allow installing watcher task
-        return im
-
-
-    def __init__(self):
-        self._watcher = aionotify.Watcher()
-        self._path2modname = {}
-
-
-    def watch_parent_dir(self, qname, sffile):
-        parent = sffile.parent.as_posix()
-        if parent not in self._watcher.requests:
-            self._watcher.watch(parent, aionotify.Flags.MODIFY | aionotify.Flags.MOVED_TO)
-        self._path2modname[sffile.as_posix()] = qname
-
-
-    # https://docs.python.org/3/library/importlib.html#importlib.abc.MetaPathFinder.find_spec
-    def find_spec(self, fullname, parent_path, target=None):
-        name = fullname.rsplit('.')[-1]
-        for parent in parent_path or sys.path:
-            sfile = Path(parent)/f"{name}.sf"
-            if sfile.is_file():
-                self.watch_parent_dir(fullname, sfile)
-                return spec_from_loader(fullname, SourceFileLoader(fullname, sfile.as_posix()))
-                # after this point, the import might still fail due to (syntax) errors
-
-
-    async def _run(self):
-        await self._watcher.setup(asyncio.get_running_loop())
-        while True:
-            try:
-                event = await self._watcher.get_event()
-                if event.flags in [aionotify.Flags.MODIFY, aionotify.Flags.MOVED_TO] and event.name.endswith(".sf"):
-                    fname = os.path.join(event.alias, event.name)
-                    if modName := self._path2modname.get(fname):
-                        if mod := sys.modules.get(modName):   # might not have been loaded due to (syntax) errors
-                            try:
-                                importlib.reload(mod)
-                            except Exception as e:
-                                logger.exception(f"Exception while reloading {modName}", exc_info=e)
-            except Exception as e:
-                logging.exception(f"Watcher: loop", exc_info=e)
-
-
-
-    def run(self, loop):
-        self.task = asyncio.get_running_loop().create_task(self._run())
-        return self.task
-
+from .sfimporter import TemplateImporter, guarded_path, sfimporter
+from .stdsflib import builtins
 
 
 class DynamicHtml:
@@ -204,7 +133,9 @@ class DynamicHtml:
         modname = request.path[1:]
         if not modname:
             modname = self._default
-        if self._rootmodule:
+        if modname in builtins:
+            fullname = 'metastreams.html.stdsflib.' + modname
+        elif self._rootmodule:
             fullname = '.'.join((self._rootmodule, modname))
         else:
             fullname = modname
@@ -242,57 +173,8 @@ keep_modules = sys.modules.copy()
 
 
 
-@test
-async def remove_old_importer_when_present():
-    im0 = await TemplateImporter.install()
-    try:
-        im1 = await TemplateImporter.install()
-        test.eq(im1, sys.meta_path[-1])
-        test.ne(im0, im1)
-    finally:
-        im2 = sys.meta_path.pop()
-        test.eq(im1, im2)
-
-
-@test.fixture
-async def sfimporter():
-    im0 = await TemplateImporter.install()
-    yield im0
-    im1 = sys.meta_path.pop()
-    assert im1 is im0
-
-
-@test.fixture
-def guarded_path(tmp_path):
-    modules = sys.modules.copy()
-    assert isinstance(tmp_path, Path)
-    path = tmp_path.as_posix()
-    sys.path.insert(0, path)
-    yield tmp_path
-    sys.path.remove(path)
-    assert path not in sys.path
-    for m in set(sys.modules):
-        if m not in modules:
-            sys.modules.pop(m)
-
-
-@test
-async def load_top_level_sf(sfimporter, guarded_path):
-    (guarded_path/'x.sf').write_text("a=42")
-    from x import a
-    test.eq(42, a)
-
-
-@test
-async def load_templates_on_create(sfimporter, guarded_path):
-    (dyn_dir := guarded_path / "pruts").mkdir()
-    (dyn_dir / "pruebo.sf").write_text("def main(**k): pass")
-
-    import pruts
-    from pruts import pruebo
-
-    import inspect
-    test.truth(inspect.isfunction(pruts.pruebo.main))
+test.fixture(guarded_path)
+test.fixture(sfimporter)
 
 
 @test
@@ -307,64 +189,6 @@ async def load_fixed(sfimporter, guarded_path):
     test.eq("over", ''.join([i async for i in result]))
 
 
-@test
-def only_one_importer(guarded_path):
-    (dyn_dir := guarded_path / "pruts").mkdir()
-    (dyn_dir / "pruebo.sf").write_text("def main(**k): pass")
-
-    import pruts
-    currentCount = len([importer for importer in sys.meta_path if isinstance(importer, TemplateImporter)])
-
-    test.eq(currentCount, len([importer for importer in sys.meta_path if isinstance(importer, TemplateImporter)]))
-
-
-
-
-
-@test.fixture(guarded_path)
-
-@test
-async def reload_template_created_later(sfimporter, guarded_path):
-    pruts_path = guarded_path/'pruts'
-    pruts_path.mkdir()
-    pruebo_path = pruts_path/'pruebo.sf'
-    pruebo_path.write_text(f"""import pruts.does_not_exist_yet\n""")
-
-    import pruts   # this works because pruts is on sys.path
-    await asyncio.sleep(0.2)
-    try:
-        import pruts.pruebo
-        test.fail()
-    except ImportError as e:
-        test.eq("No module named 'pruts.does_not_exist_yet'", str(e))
-    doesnot_exists_yet_path = pruts_path/'does_not_exist_yet.sf'
-    doesnot_exists_yet_path.write_text(f"""a=10\n""")
-    await asyncio.sleep(0.2)
-    import pruts.pruebo
-    from pruts.does_not_exist_yet import a
-    test.eq(10, a)
-    doesnot_exists_yet_path.write_text(f"""
-a, b = 42, 43
-""")
-    await asyncio.sleep(0.1)
-    from pruts.does_not_exist_yet import a
-    test.eq(42, a)
-    from pruts.does_not_exist_yet import b
-    test.eq(43, b)
-
-
-@test
-async def reload_after_initially_failing(sfimporter, guarded_path):
-    (guarded_path/'failfirst.sf').write_text("await def f(): return 42")
-    try:
-        import failfirst
-        test.fail()
-    except SyntaxError:
-        pass
-    (guarded_path/'failfirst.sf').write_text("async def f(): return 42")
-    import failfirst
-    test.eq(42, await failfirst.f())
-
 
 @test
 async def wtf_call_wtf_invalidate_caches_wtf(sfimporter, guarded_path):
@@ -377,43 +201,6 @@ async def wtf_call_wtf_invalidate_caches_wtf(sfimporter, guarded_path):
     d = DynamicHtml("two")
     result = await d.handle_request(request=MockRequest(path="/two"), response=None)
     test.eq("two", ''.join([i async for i in result]))
-
-
-@test
-async def reload_on_change(sfimporter, guarded_path):
-    (dyn_dir := guarded_path / "pruts1").mkdir()
-    (dyn_dir / "pruebo1.sf").write_text("def main(**k): return 1")
-
-    import pruts1
-    import pruts1.pruebo1
-    test.eq(1, pruts1.pruebo1.main())
-
-    (dyn_dir / "pruebo1.sf").write_text("def main(**k): return 2 ")  # <-- essential space
-    await asyncio.sleep(0.1)
-
-    import pruts1.pruebo1
-    test.eq(2, pruts1.pruebo1.main())
-
-
-@test
-async def reload_imported_templates(sfimporter, guarded_path):
-    (dyn_dir := guarded_path / "pruts2").mkdir()
-    (dyn_dir / "pruebo1.sf").write_text("""
-import pruts2.pruebo2 as pruebo2
-
-def main(**k):
-    return pruebo2.main()
-""")
-    (dyn_dir / "pruebo2.sf").write_text("def main(**k): return 1")
-
-    import pruts2
-    import pruts2.pruebo1
-    test.eq(1, pruts2.pruebo1.main())
-
-    (dyn_dir / "pruebo2.sf").write_text("def main(**k): return 22")
-    await asyncio.sleep(0.1)
-
-    test.eq(22, pruts2.pruebo1.main())
 
 
 @test
@@ -554,8 +341,12 @@ async def test_default_page(sfimporter, guarded_path):
 @test
 async def use_builtins(sfimporter):
     d = DynamicHtml(None)
-    result = await d.handle_request(request=MockRequest(path="/page"), response=None)
-    test.eq("", ''.join([i async for i in result]))
+    try:
+        result = await d.handle_request(request=MockRequest(path="/page"), response=None)
+        test.eq("", ''.join([i async for i in result]))
+    finally:
+        assert 'page' not in sys.modules
+        sys.modules.pop('metastreams.html.stdsflib.page')
 
 
 
@@ -584,6 +375,8 @@ async def main(**k):
 
     result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
     test.eq("['one', 'two']", ''.join([i async for i in result]))
+
+
 
 #@test
 async def test_context_in_post_request(sfimporter, guarded_path):
@@ -749,17 +542,7 @@ async def main(tag, **kwargs):
     test.eq(8, len(err))
 
 
-#sys.path.remove(stdlib.__path__[0])
-sys.modules.pop('page', None)
-
-
 # verify if stuff is cleaned up
 assert keep_sys_path == sys.path, set(keep_sys_path) ^ set(sys.path)
 assert keep_meta_path == sys.meta_path
-for n, v in sys.modules.items():
-    p = keep_modules[n]
-    if p != v:
-        print("CHANGED module:", n)
-        print("    WAS:", id(p), p)
-        print("     IS:", id(v), v)
 assert keep_modules == sys.modules, keep_modules.keys() ^ sys.modules.keys()

@@ -1,0 +1,41 @@
+
+import autotest
+test = autotest.get_tester(__name__)
+
+from metastreams.html.stdsflib.call_js import CallPy, call_js
+call_py = CallPy()
+
+
+@call_py.main
+def main(tag, *_, **__):
+    with tag.div(id='start_id'):
+        pass
+    with tag.div(id='offset_id'):
+        pass
+    with tag.div(id='left_id'):
+        pass
+    with tag.div(id='right_id'):
+        pass
+    with tag.div(id='end_id'):
+        pass
+    with tag.div(id='total_id'):
+        pass
+    with tag.div(id='results_ph'):
+        pass
+    py_fn_piggies = {'a': 42}
+    with tag.div(**call_js('prevnextctrl.generic_init',
+            count=10, offset_id='offset_id', start_id='start_id', left_id='left_id', right_id='right_id', end_id='end_id', total_id='total_id',
+            results_ph='results_ph', py_fn_name='py_fn_name', **py_fn_piggies)):
+        pass
+
+    with tag.script(type='module', src="/static/main.js"):
+        pass
+
+    yield "TEST PAGE"
+
+@call_py.jscallable
+def my_py_function(tag, http, **my_py_piggies):
+    pass
+
+
+
