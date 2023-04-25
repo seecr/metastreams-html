@@ -13,7 +13,8 @@ def load(name):
 
 
 # in order of dependency
-builtins = ['call_js', 'page', 'login', 'logout', 'prevnextctrl']
+builtins = ['call_js', 'page', 'login', 'logout', 'prevnextctrl', 'jstests']
+assert all(sf.stem in builtins for sf in pathlib.Path(__file__).parent.glob("*.sf"))
 
 
 # load modules for the side effect of testing

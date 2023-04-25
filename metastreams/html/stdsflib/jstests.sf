@@ -1,0 +1,12 @@
+
+def main(tag, *_, **__):
+    with tag.script(
+            src="https://code.jquery.com/jquery-3.6.0.min.js",
+            integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4=",
+            crossorigin="anonymous"):
+        pass
+    for module in ['prevnextctrl', 'autotest', 'aproba', 'main', 'page', 'common']:
+        with tag.script(
+                src=f"static/{module}.js", type="module"):
+            pass
+    yield "TEST JS PAGE, see console."
