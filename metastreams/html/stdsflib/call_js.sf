@@ -4,8 +4,11 @@ import inspect
 from metastreams.html.utils import Dict
 import json
 
+import autotest
+test = autotest.get_tester(__name__)
 
-__all__ =['CallPy', 'call_js']
+
+__all__ = ['CallPy', 'call_js']
 
 
 class CallPy:
@@ -26,7 +29,6 @@ class CallPy:
 
     def main(self, main_fn):
         @wraps(main_fn)
-        #response = mod.main(tag=tag, request=request, response=response, context=self._context, session=session)
         def wrap_main(tag, request, response, context, session):
             query = request.query
             if 'call_py' in query:
@@ -68,4 +70,60 @@ def py2js(v):
     if isinstance(v, bool):
         return str(v).lower()
     return v
+
+
+@test
+def convert_py2js():
+    test.eq(0, py2js(0))
+    test.eq(1, py2js(1))
+    test.eq(1.0, py2js(1.0))
+    test.eq('true', py2js(True))
+    test.eq('false', py2js(False))
+
+
+@test
+def call_js_element_data():
+    # rudimentary
+    test.eq({'call_js': 'js_func_name', 'data-value': 1, 'data-more': 'true'},
+            call_js('js_func_name', value=1, more=True))
+
+
+@test
+def call_py_test():
+    results = []
+    cp = CallPy()
+    @cp.main
+    def main(*a, **k):
+        results.append((a, k))
+        return "goodbye from main"
+    @cp.jscallable
+    def a_callable(tag, http, c=21):
+        results.append((tag, http, c))
+        http.returns(roger='that')
+        return "hello from a_callable"
+    test.eq({'a_callable': a_callable}, cp.functions)
+
+    tag = None
+    class Request:
+        query = {}
+    req1 = Request()
+    answer = main('tag1', req1, "response1", "context1", "session1")
+    test.eq((('tag1',), {'request': req1, 'response': 'response1', 'context': 'context1', 'session': 'session1'}), results[0])
+    test.eq("goodbye from main", answer)
+
+    class Response:
+        headers = {}
+    req2 = Request()
+    resp2 = Response()
+    req2.query = {'call_py': 'a_callable', 'data': json.dumps({'c': [{'a': 'noot'}]})}
+    response = main('tag2', req2, resp2, "context2", "session2")
+    test.eq(('tag2', test.any(dict), [{'a': 'noot'}]), results[1])
+    http = results[1][1]
+    test.eq(req2, http.request)
+    test.eq(resp2, http.response)
+    test.eq('context2', http.context)
+    test.eq('session2', http.session)
+    test.eq('hello from a_callable', response)
+    test.isfunction(http.returns)
+    test.eq({'Py-Arg-roger': 'that'}, http.response.headers)
 

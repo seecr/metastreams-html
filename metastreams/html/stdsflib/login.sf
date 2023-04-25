@@ -80,8 +80,10 @@ def content(tag, session, title, *args, **kwargs):
                         with tag("input.form-control", type_="password", name="password", placeholder="Password"): pass
                     with tag("button.btn.btn-primary"): yield "Login"
 
+
 import autotest
 test = autotest.get_tester(__name__)
+
 
 @test
 def test_get_user(tmp_path):
