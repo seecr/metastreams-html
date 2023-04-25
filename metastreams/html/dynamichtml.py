@@ -45,7 +45,7 @@ import autotest
 test = autotest.get_tester(__name__)
 
 
-import metastreams.html.stdsflib as stdlib
+#import metastreams.html.stdsflib as stdlib
 from ._tag import TagFactory
 
 
@@ -57,11 +57,11 @@ class TemplateImporter:
             logging.info(f"Watcher: found old TemplateImporter, removing it: {im}.")
             sys.meta_path.remove(im)
             im.task.cancel()
-        stdlib_path = stdlib.__path__[0]
-        if stdlib_path in sys.path:
-            logging.info(f"Importer: stdlib path {stdlib_path!r} already on sys.path.")
-        else:
-            sys.path.insert(0, stdlib.__path__[0])
+        #stdlib_path = stdlib.__path__[0]
+        #if stdlib_path in sys.path:
+        #    logging.info(f"Importer: stdlib path {stdlib_path!r} already on sys.path.")
+        #else:
+        #    sys.path.insert(0, stdlib.__path__[0])
         im = TemplateImporter()
         sys.meta_path.append(im)
         im.run(asyncio.get_running_loop())
@@ -159,13 +159,20 @@ class DynamicHtml:
                 async for value in compose(response):
                     yield value
             except Exception as e:
-                stack.append(traceback.extract_tb(e.__traceback__)[-1]) # add last call site
+                tb = e.__traceback__
+                most_recent_sf = None
+                # find most recent .sf on the stack
+                while tb.tb_next:
+                    if tb.tb_frame.f_code.co_filename[-3:] == '.sf':
+                        most_recent_sf = tb
+                    tb = tb.tb_next
+                stack.extend(traceback.extract_tb(most_recent_sf or tb)) # recent .sf + possibly down into Python code
                 msg = ["Generators Traceback (most recent call last):\n"]
                 msg += traceback.StackSummary.from_list(stack).format()
                 msg += traceback.format_exception_only(type(e), e)
                 for line in msg:
                     print(line, file=sys.stderr, end='')
-                raise RuntimeError(f"{e}, see generators traceback above") from None
+                raise RuntimeError(f"{e}, see Generators Traceback above")
             for line in tag.lines():
                 yield line
         else:
@@ -666,6 +673,37 @@ async def main(tag, **kwargs):
     test.eq('<number><something><another>another</another>something</something></number>', ''.join([i async for i in result]))
 
 
+def a_lib():
+    1/0
+
+@test
+async def show_right_trace_when_error_deep_in_lib(sfimporter, guarded_path):
+    (dyn_dir := guarded_path / "pruts").mkdir(parents=True)
+    (dyn_dir / "pruebo.sf").write_text("""
+from metastreams.html.dynamichtml import a_lib
+def main(*a, **k):
+    a_lib()
+    yield
+""")
+    d = DynamicHtml("pruts")
+    result = []
+    try:
+        with test.stderr as o:
+            async for r in await d.handle_request(request=MockRequest(path="/pruebo"), response=None):
+                result.append(r)
+    except RuntimeError:
+        pass
+    test.eq([], result)
+    log = o.getvalue().splitlines()
+    test.contains(log[0], "Generators Traceback")
+    test.contains(log[1], "pruebo.sf")
+    test.contains(log[2], "a_lib()")
+    test.contains(log[3], "in a_lib")
+    test.contains(log[4], "1/0")
+    test.contains(log[5], "ZeroDivisionError")
+
+
+
 @test
 async def show_decent_stack_trace(sfimporter, guarded_path):
     """ Without doing anything, the exception below results in an incomprehensible
@@ -711,11 +749,17 @@ async def main(tag, **kwargs):
     test.eq(8, len(err))
 
 
-sys.path.remove(stdlib.__path__[0])
+#sys.path.remove(stdlib.__path__[0])
 sys.modules.pop('page', None)
 
 
 # verify if stuff is cleaned up
 assert keep_sys_path == sys.path, set(keep_sys_path) ^ set(sys.path)
 assert keep_meta_path == sys.meta_path
+for n, v in sys.modules.items():
+    p = keep_modules[n]
+    if p != v:
+        print("CHANGED module:", n)
+        print("    WAS:", id(p), p)
+        print("     IS:", id(v), v)
 assert keep_modules == sys.modules, keep_modules.keys() ^ sys.modules.keys()

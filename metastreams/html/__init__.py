@@ -23,6 +23,9 @@
 #
 ## end license ##
 
+
+from .stdsflib import * # trigger tests
+
 from .sessionstore import SessionStore
 from .cookie import Cookie
 from .dynamichtml import DynamicHtml, Dict
@@ -39,3 +42,5 @@ usr_share_path = (my_dir.parent.parent.parent / 'usr-share').as_posix()    #DO_N
 from .server import *
 from .passwordfile2 import *
 from ._tag import *
+
+

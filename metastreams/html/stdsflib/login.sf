@@ -23,7 +23,7 @@
 #
 ## end license ##
 
-from metastreams.html.templates import page
+from metastreams.html.stdsflib import page
 from urllib.parse import parse_qs
 
 async def validate(request, session, context, **kwargs):
@@ -47,11 +47,13 @@ def _get_user(password_file, username, password):
         return data or username
 
 
-def main(*args, **kwargs):
-    yield page.render(content,
-        title="Metastreams",
-        top_bar=False,
-        **kwargs)
+def main(tag, *args, **kwargs):
+    with page.render(
+            tag,
+            title="Metastreams",
+            top_bar=False,
+            **kwargs):
+        yield content
 
 
 def content(tag, session, title, *args, **kwargs):

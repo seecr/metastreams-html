@@ -27,13 +27,25 @@ import inspect
 import warnings
 from urllib.parse import urlencode
 
-from metastreams.html._tag import tagable
+from metastreams.html._tag import tagable, TagFactory
 
+import autotest
+test = autotest.get_tester(__name__)
+
+__all__ = ['margins', 'render', 'card', 'card2', 'modal']
 
 @tagable
 def margins(tag, pt=2):
   with tag(f"div.container-fluid.pt-{pt}.pb-{pt}"):
       yield
+
+
+@test
+def margins_tagable():
+    tag = TagFactory()
+    with margins(tag, pt=6):
+        pass
+    test.eq(['<div class="container-fluid pt-6 pb-6"></div>'], list(tag.lines()))
 
 
 @tagable

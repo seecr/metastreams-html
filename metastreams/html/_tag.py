@@ -179,9 +179,9 @@ class TagFactory(object):
                 return self.tag.__exit__(*a, **kw)
         return ClassCollector(name)
 
+
 def tag_compose(f, __bw_compat__=False):
     @contextmanager
-    @compose
     def ctx_man(tag, *args, **kwargs):
         tag._enter_callback()
         try:
