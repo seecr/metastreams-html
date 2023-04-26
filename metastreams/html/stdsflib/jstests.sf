@@ -33,7 +33,7 @@ def call_py_basics(tag, http, n=42, name="Nobody"):
 @callpy.jscallable
 def call_py_returns_types(tag, http, i, f, s):
     test.isinstance(i, int)
-    test.isinstance(i, float)
-    test.isinstance(i, str)
+    test.isinstance(f, float)
+    test.isinstance(s, str)
     http.returns(i=i, f=f, s=s)
     yield f"{i!r}, {f!r}, {s!r}"

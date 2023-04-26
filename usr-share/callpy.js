@@ -30,7 +30,17 @@ let test = get_tester("query2");
 import {validate} from "./aproba.js";
 
 
+function parse_value(v) {
+    validate("N|S", [v]);
+    let p = parseFloat(v);
+    if (isNaN(p))
+        return v;
+    return p
+}
+
+
 function headers2map(headers) {
+    validate("S", [headers]);
     // I did not find a Headers parser. This one support only one value per key,
     // but that is enough for Python arguments.
     return Object.fromEntries(
@@ -38,7 +48,7 @@ function headers2map(headers) {
         .split("\r\n")
         .map(line => line.split(": "))
         .filter(([key, value]) => key.startsWith('py-arg-'))
-        .map(([key, value]) => [key.substring(7,99), parseFloat(value)]));
+        .map(([key, value]) => [key.substring(7,99), parse_value(value)]));
 }
 
 
@@ -51,6 +61,7 @@ test(function headers2map_test() {
 // Call a Python function in a .sf, marked with callpy.jscallable.
 //
 export function call_py(funcname, kwargs = {}, done) {
+    validate("SOF", arguments);
     let query = {call_py: funcname, data: JSON.stringify(kwargs)};
     let url = new URL(location);
     const response = $.get(url.origin + url.pathname, query);
@@ -70,10 +81,10 @@ test(function call_py_basics() {
 
 test(function call_py_returns_types() {
     call_py('call_py_returns_types', {i: 13, f: 3.14, s: "Aap"}, (body, kwargs) => {
-        test.eq("13, 3.14, Aap", body);
         test.eq(13, kwargs.i);
         test.eq(3.14, kwargs.f);
-        test.eq(13, kwargs.s);
+        test.eq("Aap", kwargs.s);
+        test.eq("13, 3.14, 'Aap'", body);
     });
 })
 
