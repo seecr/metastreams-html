@@ -50,7 +50,6 @@ def content_type(filename):
 
 
 def static_handler(static_dirs, static_path):
-    static_dirs = static_dirs if isinstance(static_dirs, list) else [static_dirs]
 
     async def _handler(request):
         if not (requested_path := request.path).startswith(static_path):
@@ -108,7 +107,7 @@ class MockRequest:
 
 @test
 async def no_file_for_static_handler(tmp_path):
-    handler = static_handler(tmp_path, "/static")
+    handler = static_handler((tmp_path,), "/static")
     try:
         await handler(MockRequest(path="/static/does_not_exist"))
         assert False
@@ -117,7 +116,7 @@ async def no_file_for_static_handler(tmp_path):
 
 @test
 async def static_handler_path_mismatch(tmp_path):
-    handler = static_handler(tmp_path, "/static")
+    handler = static_handler((tmp_path,), "/static")
     try:
         await handler(MockRequest(path="/this/does_not_exist"))
         assert False
@@ -126,7 +125,7 @@ async def static_handler_path_mismatch(tmp_path):
 
 @test
 async def serve_file(tmp_path):
-    handler = static_handler(tmp_path, "/static")
+    handler = static_handler((tmp_path,), "/static")
     (tmp_path / "test-file.txt").write_text("These are the contents")
     request = MockRequest(path="/static/test-file.txt")
     response = await handler(request)
@@ -146,7 +145,7 @@ async def test_multiple_static_directories(tmp_path):
     (dir_a := tmp_path / "a").mkdir()
     (dir_b := tmp_path / "b").mkdir()
     (dir_b / "file.txt").write_text("Hello World")
-    
+
     handler = static_handler([dir_a, dir_b], "/static")
     request = MockRequest(path="/static/file.txt")
     response = await handler(request)

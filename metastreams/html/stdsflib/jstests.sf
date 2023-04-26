@@ -1,3 +1,6 @@
+import autotest
+test = autotest.get_tester(__name__)
+
 
 import pathlib
 from metastreams.html.stdsflib.call_js import CallPy
@@ -22,6 +25,15 @@ def main(tag, *_, **__):
 
 
 @callpy.jscallable
-def test_a_jscallable(tag, http, n=42):
+def call_py_basics(tag, http, n=42, name="Nobody"):
     http.returns(result=n * 2)
-    yield 'mies'
+    yield f"Hello {name}!"
+
+
+@callpy.jscallable
+def call_py_returns_types(tag, http, i, f, s):
+    test.isinstance(i, int)
+    test.isinstance(i, float)
+    test.isinstance(i, str)
+    http.returns(i=i, f=f, s=s)
+    yield f"{i!r}, {f!r}, {s!r}"
