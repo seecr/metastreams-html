@@ -173,7 +173,7 @@ async def test_post_request():
             return "the url"
 
     class MockDynamicHtml(DynamicHtml):
-        def _mod_from_request(self, *args, **kwargs):
+        def _load_module(self, modname):
             return MockPackage()
 
     handler = dynamic_handler(MockDynamicHtml(rootmodule=''))
@@ -191,7 +191,7 @@ async def test_post_request_dict_():
             return dict(success=True)
 
     class MockDynamicHtml(DynamicHtml):
-        def _mod_from_request(self, *args, **kwargs):
+        def _load_module(self, modname):
             return MockPackage()
 
     handler = dynamic_handler(MockDynamicHtml(rootmodule=''))

@@ -90,7 +90,7 @@ class DynamicHtml:
             except Exception as e:
                 tb = e.__traceback__
                 most_recent_sf = None
-                # find most recent .sf on the stack
+                # find most recent .sf on the stack AND everything from there to the end
                 while tb.tb_next:
                     if tb.tb_frame.f_code.co_filename[-3:] == '.sf':
                         most_recent_sf = tb
@@ -109,10 +109,10 @@ class DynamicHtml:
 
 
     async def handle_post_request(self, request, session=None):
-        mod = self._mod_from_request(request)
-        _, method_name = split_path(request.path)
+        modname, method_name = split_path(request.path)
         if method_name is None:
             raise HTTPNotFound()
+        mod = self._load_module(modname)
 
         # TODO: check if allowed to use method, else 405
         try:
@@ -125,12 +125,12 @@ class DynamicHtml:
 
 
     async def handle_request(self, request, response, session=None):
-        mod = self._mod_from_request(request)
+        modname = request.path[1:]
+        mod = self._load_module(modname)
         return self.render_page(mod, request, response, session=session)
 
 
-    def _mod_from_request(self, request):
-        modname = request.path[1:]
+    def _load_module(self, modname):
         if not modname:
             modname = self._default
         if modname in builtins:
@@ -351,7 +351,7 @@ async def use_builtins(sfimporter):
 
 
 
-#@test
+@test
 async def test_handle_post_request(sfimporter, guarded_path):
     (dyn_dir := guarded_path / "pruts").mkdir(parents=True)
     (dyn_dir / "pruebo.sf").write_text("""
@@ -378,7 +378,7 @@ async def main(**k):
 
 
 
-#@test
+@test
 async def test_context_in_post_request(sfimporter, guarded_path):
     (dyn_dir := guarded_path / "pruts").mkdir(parents=True)
     (dyn_dir / "pruebo.sf").write_text("""
