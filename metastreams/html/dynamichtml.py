@@ -466,34 +466,43 @@ async def main(tag, **kwargs):
     test.eq('<number><something><another>another</another>something</something></number>', ''.join([i async for i in result]))
 
 
-def a_lib():
-    1/0
-
 @test
-async def show_right_trace_when_error_deep_in_lib(sfimporter, guarded_path):
-    (dyn_dir := guarded_path / "pruts").mkdir(parents=True)
-    (dyn_dir / "pruebo.sf").write_text("""
-from metastreams.html.dynamichtml import a_lib
+async def wwap():
+    """ wrap causes an asyncio event loop to be started, forcing the nested test
+    to run in a thread; which caused a deadlock on import from metastreams.html,
+    without Python detecting it.
+    """
+    @test
+    async def show_right_trace_when_error_deep_in_lib(sfimporter, guarded_path):
+        (dyn_dir := guarded_path / "pruts").mkdir(parents=True)
+        (dyn_dir / "pruebo.sf").write_text("""
 def main(*a, **k):
-    a_lib()
+    import json
+    json.dumps(json)  # causes error with some trace
     yield
 """)
-    d = DynamicHtml("pruts")
-    result = []
-    try:
-        with test.stderr as o:
-            async for r in await d.handle_request(request=MockRequest(path="/pruebo"), response=None):
-                result.append(r)
-    except RuntimeError:
-        pass
-    test.eq([], result)
-    log = o.getvalue().splitlines()
-    test.contains(log[0], "Generators Traceback")
-    test.contains(log[1], "pruebo.sf")
-    test.contains(log[2], "a_lib()")
-    test.contains(log[3], "in a_lib")
-    test.contains(log[4], "1/0")
-    test.contains(log[5], "ZeroDivisionError")
+        d = DynamicHtml("pruts")
+        result = []
+        try:
+            with test.stderr as o:
+                async for r in await d.handle_request(request=MockRequest(path="/pruebo"), response=None):
+                    result.append(r)
+        except RuntimeError:
+            pass
+        test.eq([], result)
+        log = o.getvalue().splitlines()
+        test.contains(log[0], "Generators Traceback")
+        test.contains(log[1], "pruebo.sf")
+        test.contains(log[2], "json.dumps(json)")
+        test.contains(log[3], "json/__init__.py")
+        test.contains(log[4], ".encode(obj)")
+        test.contains(log[5], "encoder.py")
+        test.contains(log[6], "iterencode(o,")
+        test.contains(log[7], "encoder.py")
+        test.contains(log[8], "_iterencode(o,")
+        test.contains(log[9], "encoder.py")
+        test.contains(log[10], "raise TypeError")
+        test.contains(log[11], "not JSON serializable")
 
 
 
