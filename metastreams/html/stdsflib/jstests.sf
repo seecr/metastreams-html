@@ -1,12 +1,27 @@
 
+import pathlib
+from metastreams.html.stdsflib.call_js import CallPy
+
+callpy = CallPy()
+
+builtins = list(sf.stem for sf in pathlib.Path(__file__).parent.parent.parent.parent.glob("usr-share/*.js"))
+
+
+@callpy.main
 def main(tag, *_, **__):
     with tag.script(
             src="https://code.jquery.com/jquery-3.6.0.min.js",
             integrity="sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4=",
             crossorigin="anonymous"):
         pass
-    for module in ['prevnextctrl', 'autotest', 'aproba', 'main', 'page', 'common']:
+    for module in builtins:
         with tag.script(
                 src=f"static/{module}.js", type="module"):
             pass
     yield "TEST JS PAGE, see console."
+
+
+@callpy.jscallable
+def test_a_jscallable(tag, http, n=42):
+    http.returns(result=n * 2)
+    yield 'mies'

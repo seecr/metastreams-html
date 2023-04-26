@@ -47,14 +47,14 @@ def _get_user(password_file, username, password):
         return data or username
 
 
-def main(tag, session, **kwargs):
+def main(tag, session, title="Metastreams", **kwargs):
     with page.render(
             tag,
-            title="Metastreams",
+            title=title,
             top_bar=False,
             session=session,
             **kwargs):
-        yield content(tag, session=session, title="MAIN")
+        yield content(tag, session=session, title=title)
 
 
 def content(tag, session, title, *args, **kwargs):

@@ -404,6 +404,7 @@ def test_split_path():
     test.eq(("index", "show"), split_path("/index/show"))
 
 
+
 @test
 async def test_async_main(sfimporter, guarded_path):
     (dyn_dir := guarded_path / "pruts").mkdir(parents=True)
@@ -418,6 +419,7 @@ async def main(tag, **kwargs):
     d = DynamicHtml("pruts")
     result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
     test.eq(['<number>', '42', '</number>'], [i async for i in result])
+
 
 
 @test
