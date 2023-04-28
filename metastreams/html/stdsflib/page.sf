@@ -74,6 +74,7 @@ def render(tag, homeUrl="/", top_bar=True, stylesheets=None, javascripts=None, *
             with tag("link",
                 href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.9.1/font/bootstrap-icons.css",
                 rel="stylesheet"): pass
+            with tag('link', rel='shortcut icon', href='/static/favicon.ico'): pass
             for stylesheet in stylesheets:
                 with tag("link", rel="stylesheet", type_="text/css", href=stylesheet if (stylesheet[0] == '/' or stylesheet.startswith("http")) else f'/static/{stylesheet}'): pass
 
