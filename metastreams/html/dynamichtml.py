@@ -29,7 +29,7 @@ import inspect
 import traceback
 import importlib
 
-from aiohttp.web import HTTPNotFound
+from aiohttp.web import HTTPNotFound, HTTPException
 from pathlib import Path
 
 import logging
@@ -87,6 +87,8 @@ class DynamicHtml:
             try:
                 async for value in compose(response):
                     yield value
+            except HTTPException:  # TODO test
+                raise
             except Exception as e:
                 tb = e.__traceback__
                 most_recent_sf = None
@@ -109,7 +111,7 @@ class DynamicHtml:
 
 
     async def handle_post_request(self, request, session=None):
-        modname, method_name = split_path(request.path)
+        modname, method_name = split_path(request.path, 2)
         if method_name is None:
             raise HTTPNotFound()
         mod = self._load_module(modname)
@@ -124,11 +126,10 @@ class DynamicHtml:
         return return_url
 
 
-    async def handle_request(self, request, response, session=None):
-        modname = request.path[1:]
+    async def handle_request(self, request, response, session=None): #GET
+        modname = split_path(request.path, 1)
         mod = self._load_module(modname)
         return self.render_page(mod, request, response, session=session)
-
 
     def _load_module(self, modname):
         if not modname:
@@ -151,14 +152,24 @@ class DynamicHtml:
                 raise e from None
 
 
-def split_path(path):
+def split_path(path, nr):
     if path[0] == '/':
         path = path[1:]
-    path_parts = [part if part else None for part in path.split("/")] + [None]
+    path_parts = [part if part else None for part in path.split("/")] + [None]*nr
+    if nr == 1:
+        return path_parts[0]
+    return path_parts[:nr]
 
-    module_name, method_name, *_ = path_parts
+@test
+def test_split_path():
+    test.eq([None, None], split_path("/", 2))
+    test.eq(["index", None], split_path("/index", 2))
+    test.eq(["index", "show"], split_path("/index/show", 2))
+    test.eq(["index", "show"], split_path("/index/show/me", 2))
+    test.eq(None, split_path("/", 1))
+    test.eq('path', split_path("/path/", 1))
+    test.eq('path', split_path("/path/some/more/paths", 1))
 
-    return module_name, method_name
 
 
 class MockRequest:
@@ -207,14 +218,39 @@ async def wtf_call_wtf_invalidate_caches_wtf(sfimporter, guarded_path):
 async def test_handle_template(sfimporter, guarded_path):
     (dyn_dir := guarded_path / "pruts3").mkdir()
     (dyn_dir / "pruebo.sf").write_text("""
-def main(tag, **k):
+def main(tag, request, **k):
     with tag("h1"):
         yield "Hello world!"
+    with tag.p:
+        yield "My path: "+request.path
 """)
     d = DynamicHtml("pruts3")
     result = await d.handle_request(request=MockRequest(path="/pruebo"), response=None)
-    test.eq("<h1>Hello world!</h1>", ''.join([i async for i in result]))
+    test.eq("<h1>Hello world!</h1><p>My path: /pruebo</p>", ''.join([i async for i in result]))
 
+    result = await d.handle_request(request=MockRequest(path="/pruebo/path/information"), response=None)
+    test.eq("<h1>Hello world!</h1><p>My path: /pruebo/path/information</p>", ''.join([i async for i in result]))
+
+@test
+async def test_handle_redirect_http_aio_style(sfimporter, guarded_path):
+    (dyn_dir := guarded_path / "pruts7").mkdir()
+    (dyn_dir / "goto.sf").write_text("""
+from aiohttp import web
+def main(tag, request, **k):
+    raise web.HTTPFound('pruebo')
+    yield
+""")
+    d = DynamicHtml("pruts7")
+    a = await d.handle_request(request=MockRequest(path="/goto"), response=None)
+    try:
+        nr = 0
+        async for i in a:
+            nr += 1
+            print(i)
+    except HTTPException as e:
+        test.eq(302, e.status)
+        test.eq('pruebo', e.location)
+    test.eq(0, nr)
 
 @test
 async def test_context_variables(sfimporter, guarded_path):
@@ -396,13 +432,6 @@ async def something(request, context, **kwargs):
     return_url = await d.handle_post_request(request=MockRequest(path="/pruebo/something"))
     test.eq("/pruebo", return_url)
     test.eq(["one", "two"], words)
-
-@test
-def test_split_path():
-    test.eq((None, None), split_path("/"))
-    test.eq(("index", None), split_path("/index"))
-    test.eq(("index", "show"), split_path("/index/show"))
-
 
 
 @test
