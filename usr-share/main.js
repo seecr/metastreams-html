@@ -1,6 +1,6 @@
 
 
-import {call_js_all} from "./common.js"
+import {call_js_all} from "./callpy.js"
 
 
 $(document).ready(function () {

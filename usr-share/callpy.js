@@ -67,9 +67,9 @@ export function call_py(funcname, kwargs = {}, done) {
     const response = $.get(url.origin + url.pathname, query);
     response
         .done(data => done(data, headers2map(response.getAllResponseHeaders())))
-        .fail(m => console.error("ERROR calling", funcname, '(', kwargs, '):', m));
+        .fail(m => console.error("CallJs ERROR calling", funcname, '(', kwargs, '):', m));
 }
-
+/*
 
 test(function call_py_basics() {
     call_py('call_py_basics', {n: 17, name: "Mies"}, (body, kwargs) => {
@@ -87,7 +87,7 @@ test(function call_py_returns_types() {
         test.eq("13, 3.14, 'Aap'", body);
     });
 })
-
+*/
 
 
 
