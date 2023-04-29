@@ -4,7 +4,7 @@
 # It is also known as "DynamicHtml" or "Seecr Html".
 #
 # Copyright (C) 2017 SURFmarket https://surf.nl
-# Copyright (C) 2017-2018, 2020-2022 Seecr (Seek You Too B.V.) https://seecr.nl
+# Copyright (C) 2017-2018, 2020-2023 Seecr (Seek You Too B.V.) https://seecr.nl
 # Copyright (C) 2017 St. IZW (Stichting Informatievoorziening Zorg en Welzijn) http://izw-naz.nl
 # Copyright (C) 2020-2021 Data Archiving and Network Services https://dans.knaw.nl
 # Copyright (C) 2020-2021 SURF https://www.surf.nl
