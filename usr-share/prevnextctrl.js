@@ -1,6 +1,6 @@
 
 
-import {call_py, replace_content} from "./common.js"
+import {call_py, replace_content} from "./callpy.js"
 import {get_tester} from "./autotest.js"
 import {validate} from "./aproba.js";
 
