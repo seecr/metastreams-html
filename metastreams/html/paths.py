@@ -28,6 +28,6 @@ __all__ = ['usr_share_path']
 
 usr_share_path = "/usr/share/metastreams-html"
 
-from pathlib import Path                                           #DO_NOT_DISTRIBUTE
-my_path = Path(__file__).resolve().parent                          #DO_NOT_DISTRIBUTE
-usr_share_path = (my_path.parent.parent/'usr-share').as_posix()    #DO_NOT_DISTRIBUTE
+from pathlib import Path                              #DO_NOT_DISTRIBUTE
+my_path = Path(__file__).resolve().parent             #DO_NOT_DISTRIBUTE
+usr_share_path = my_path.parent.parent/'usr-share'    #DO_NOT_DISTRIBUTE
