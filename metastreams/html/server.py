@@ -46,6 +46,7 @@ async def create_server_app(module_names, index, context=None, static_dirs=(), s
     routes = additional_routes or []
     static_dirs += (((pathlib.Path(__file__).parent.parent.parent/'usr-share').as_posix()),)
     routes.append(aiohttp_web.get(static_path + '/{tail:.+}', static_handler(static_dirs, static_path)))
+    routes.append(aiohttp_web.get('/favicon.ico', static_handler(static_dirs, '')))
     routes.append(aiohttp_web.route(
         '*', '/{tail:.*}',
         dynamic_handler(dHtml,
@@ -74,16 +75,16 @@ async def test_additional_routes(guarded_path):
     keep_meta = sys.meta_path.copy()
     try:
         app = await create_server_app('', "index")
-        test.eq(3, len(app.router.routes()))
+        test.eq(5, len(app.router.routes()))
 
         app = await create_server_app('', "index", additional_routes=[aiohttp_web.route("get", "/test", lambda: None)])
-        test.eq(4, len(app.router.routes()))
+        test.eq(6, len(app.router.routes()))
 
         app = await create_server_app('', "index", additional_routes=[
             aiohttp_web.route("get", "/test", lambda: None),
             aiohttp_web.post("/test", lambda: None),
         ])
-        test.eq(5, len(app.router.routes()))
+        test.eq(7, len(app.router.routes()))
     finally:
         for p in sys.meta_path:
             if p not in keep_meta:

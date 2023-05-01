@@ -35,10 +35,16 @@ class Dict(dict):
             return self[key]
         return dict.__getattribute__(self, key)
 
+def check_user_in_session(session):
+    return session and session.get("user") is not None
+
+def check_admin_in_session(session):
+    return session and (user := session.get("user")) is not None and user.get("admin", False) is True
+
 def user_required(func):
     def check_user(*args, **kwargs):
         session = kwargs.get("session")
-        if session and session.get("user") is not None:
+        if check_user_in_session(session):
             return func(*args, **kwargs)
         raise HTTPFound('/login')
     return check_user
@@ -46,8 +52,7 @@ def user_required(func):
 def user_admin(func):
     def check_user(*args, **kwargs):
         session = kwargs.get("session")
-        if session and (user := session.get("user")) is not None and user.get("admin", False) is True:
-
+        if check_admin_in_session(session):
             return func(*args, **kwargs)
         raise HTTPFound('/login')
     return check_user

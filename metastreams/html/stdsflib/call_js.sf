@@ -25,8 +25,9 @@
 
 from functools import wraps
 import inspect
+from aiohttp import web
 
-from metastreams.html.utils import Dict
+from metastreams.html.utils import Dict, check_user_in_session, check_admin_in_session
 import json
 
 import autotest
@@ -83,6 +84,22 @@ class CallPy:
         f.__signature__ = sig # cache, see CPython code
         self.functions[f.__name__] = f
         return f
+
+    def user_required(self, f):
+        @wraps(f)
+        def check_user(tag, http, **kwargs):
+            if check_user_in_session(http.session):
+                return f(tag, http, **kwargs)
+            raise web.HTTPFound('/login')
+        return check_user
+
+    def user_admin(self, f):
+        @wraps(f)
+        def check_user(tag, http, **kwargs):
+            if check_admin_in_session(http.session):
+                return f(tag, http, **kwargs)
+            raise web.HTTPFound('/login')
+        return check_user
 
 def call_js(funcname, **kwargs):
     """ use this as follows:
@@ -152,3 +169,58 @@ def call_py_test():
     test.isfunction(http.returns)
     test.eq({'Py-Arg-roger': 'that'}, http.response.headers)
 
+@test
+def call_py_wrapped():
+    cp=CallPy()
+
+    class Request:
+        query = {}
+    class Response:
+        headers = {}
+
+    @cp.main
+    def main(*a, **k):
+        return 'main'
+
+    @cp.jscallable
+    def no_extra_wrap(tag, http):
+        return 'wrap'
+
+    @cp.jscallable
+    @cp.user_admin
+    def is_user_admin(tag, http, var):
+        test.eq('value', var)
+        return "Admin only"
+
+    @cp.jscallable
+    @cp.user_required
+    def is_user(tag, http, var):
+        test.eq('value', var)
+        return "Users welcome"
+
+    test.eq({'is_user_admin', 'is_user', 'no_extra_wrap'}, set(cp.functions.keys()))
+
+    req = Request()
+    req.query = {"call_py": 'is_user_admin', 'data':'{"var":"value"}'}
+    session = {'user':{'admin': True}}
+    resp = Response()
+    r = main(tag='tag', request=req, response=resp, session=session, context='context')
+    test.eq('Admin only', r)
+
+    session = {'user':{}}
+    try:
+        main(tag='tag', request=req, response=resp, session=session, context='context')
+        self.fail()
+    except web.HTTPFound as f:
+        test.eq('/login', f.location)
+
+    req.query = {"call_py": 'is_user', 'data':'{"var":"value"}'}
+    r = main(tag='tag', request=req, response=resp, session=session, context='context')
+    test.eq('Users welcome', r)
+
+    session = {}
+    try:
+        main(tag='tag', request=req, response=resp, session=session, context='context')
+        self.fail()
+    except web.HTTPFound as f:
+        test.eq('/login', f.location)
