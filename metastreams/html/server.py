@@ -33,6 +33,8 @@ from .dynamichtml import DynamicHtml, TemplateImporter
 from .static_handler import static_handler
 from .dynamic_handler import dynamic_handler
 
+from .paths import usr_share_path
+
 __all__ = ['create_server_app']
 
 async def create_server_app(module_names, index, context=None, static_dirs=(), static_path="/static", enable_sessions=True, session_cookie_name="METASTREAMS_SESSION", additional_routes=None):
@@ -44,7 +46,7 @@ async def create_server_app(module_names, index, context=None, static_dirs=(), s
 
     app = aiohttp_web.Application()
     routes = additional_routes or []
-    static_dirs += (((pathlib.Path(__file__).parent.parent.parent/'usr-share').as_posix()),)
+    static_dirs += (usr_share_path.as_posix(),)
     routes.append(aiohttp_web.get(static_path + '/{tail:.+}', static_handler(static_dirs, static_path)))
     routes.append(aiohttp_web.get('/favicon.ico', static_handler(static_dirs, '')))
     routes.append(aiohttp_web.route(

@@ -3,7 +3,7 @@
 # "Metastreams Html" is a template engine based on generators, and a sequel to Slowfoot.
 # It is also known as "DynamicHtml" or "Seecr Html".
 #
-# Copyright (C) 2022-2023 Seecr (Seek You Too B.V.) https://seecr.nl
+# Copyright (C) 2023 Seecr (Seek You Too B.V.) https://seecr.nl
 #
 # This file is part of "Metastreams Html"
 #
@@ -24,18 +24,10 @@
 ## end license ##
 
 
-from .paths import *
-from .stdsflib import * # trigger tests
+__all__ = ['usr_share_path']
 
-from .sessionstore import SessionStore
-from .cookie import Cookie
-from .dynamichtml import DynamicHtml, Dict
-from .static_handler import static_handler
-from .dynamic_handler import dynamic_handler
-from .testsupport import *
+usr_share_path = "/usr/share/metastreams-html"
 
-from .server import *
-from .passwordfile2 import *
-from ._tag import *
-
-
+from pathlib import Path                                           #DO_NOT_DISTRIBUTE
+my_path = Path(__file__).resolve().parent                          #DO_NOT_DISTRIBUTE
+usr_share_path = (my_path.parent.parent/'usr-share').as_posix()    #DO_NOT_DISTRIBUTE

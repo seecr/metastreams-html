@@ -40,7 +40,7 @@ setup(
     name=name,
     packages=packages,
     package_data={
-        'metastreams.html': ['templates/*.sf'],
+        'metastreams.html': ['stdsflib/*.sf'],
     },
     data_files=data_files,
     scripts=['bin/metastreams-html-server'],
