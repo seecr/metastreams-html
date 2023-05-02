@@ -62,6 +62,7 @@ def content(tag, session, title, *args, **kwargs):
         with tag("div.d-flex.flex-column.justify-content-center.align-self-stretch"):
             with tag("div.d-flex.flex-column.gap-2.p-3.ps-5.pe-5.border.border-2.rounded"):
                 with tag("h1.normal"):
+                    with tag('img.d-inline-block.align-text-middle', src='/static/img/seecr-triangles.png', alt='Seecr', width='51', height='51'): pass
                     yield title
 
                 if (message := session.pop('login-error-message', None)) is not None:
