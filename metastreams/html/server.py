@@ -46,7 +46,7 @@ async def create_server_app(module_names, index, context=None, static_dirs=(), s
 
     app = aiohttp_web.Application()
     routes = additional_routes or []
-    static_dirs += (usr_share_path.as_posix(),)
+    static_dirs += (usr_share_path,)
     routes.append(aiohttp_web.get(static_path + '/{tail:.+}', static_handler(static_dirs, static_path)))
     routes.append(aiohttp_web.get('/favicon.ico', static_handler(static_dirs, '')))
     routes.append(aiohttp_web.route(
