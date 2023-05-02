@@ -84,6 +84,7 @@ def render(tag, homeUrl="/", top_bar=True, stylesheets=None, javascripts=None, *
                 with tag("nav.navbar.navbar-expand-lg.navbar-light.bg-light.ps-2"):
                     with tag("div.container-fluid"):
                         with tag("a.navbar-brand.normal", href=homeUrl):
+                            with tag('img.d-inline-block.align-text-middle', src='/static/img/seecr-triangles.png', width='51', height='51', alt='Seecr '): pass
                             yield title
                         with tag("button.navbar-toggler", type_="button",
                                 **{ 'data-bs-toggle': 'collapse',

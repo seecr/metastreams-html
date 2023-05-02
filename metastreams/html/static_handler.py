@@ -127,12 +127,17 @@ async def static_handler_path_mismatch(tmp_path):
 async def serve_file(tmp_path):
     handler = static_handler((tmp_path,), "/static")
     (tmp_path / "test-file.txt").write_text("These are the contents")
+    (tmp_path/'sub').mkdir()
+    (tmp_path/'sub'/"other.txt").write_text("In subdirectory")
     request = MockRequest(path="/static/test-file.txt")
     response = await handler(request)
 
     test.eq({"Content-Type", "Date", "Server"}, set(dict(response.headers).keys()))
     test.eq(b"These are the contents", request._payload_writer.content)
 
+    request = MockRequest(path="/static/sub/other.txt")
+    response = await handler(request)
+    test.eq(b"In subdirectory", request._payload_writer.content)
 
 @test
 def test_get_content_type():
